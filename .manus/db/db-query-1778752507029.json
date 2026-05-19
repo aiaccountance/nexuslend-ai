@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE users SET role = 'admin' WHERE openId = 'nGq7dNpMxUpSYaqpHjtxnZ';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3pVxHzGvBPeREHC.776d15f532c0 --database 3FrnmA99Z2FSGPLKYWQXrK --execute UPDATE users SET role = 'admin' WHERE openId = 'nGq7dNpMxUpSYaqpHjtxnZ';",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 326
+}

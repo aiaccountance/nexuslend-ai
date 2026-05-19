@@ -1,0 +1,17 @@
+{
+  "query": "SELECT id, openId, name, email, role FROM users WHERE openId = 'nGq7dNpMxUpSYaqpHjtxnZ';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway06.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3pVxHzGvBPeREHC.776d15f532c0 --database 3FrnmA99Z2FSGPLKYWQXrK --execute SELECT id, openId, name, email, role FROM users WHERE openId = 'nGq7dNpMxUpSYaqpHjtxnZ';",
+  "rows": [
+    {
+      "id": "1",
+      "openId": "nGq7dNpMxUpSYaqpHjtxnZ",
+      "name": "Aryeh Lazarus",
+      "email": "lazfam18@icloud.com",
+      "role": "admin"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\topenId\tname\temail\trole\n1\tnGq7dNpMxUpSYaqpHjtxnZ\tAryeh Lazarus\tlazfam18@icloud.com\tadmin\n",
+  "stderr": "",
+  "execution_time_ms": 404
+}

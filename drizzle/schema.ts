@@ -1,0 +1,186 @@
+import {
+  int,
+  mysqlEnum,
+  mysqlTable,
+  text,
+  timestamp,
+  varchar,
+  decimal,
+  boolean,
+  json,
+} from "drizzle-orm/mysql-core";
+
+// ─── Users ────────────────────────────────────────────────────────────────────
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  name: text("name"),
+  email: varchar("email", { length: 320 }),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
+});
+
+export type User = typeof users.$inferSelect;
+export type InsertUser = typeof users.$inferInsert;
+
+// ─── Deals (loan applications submitted for analysis) ─────────────────────────
+export const deals = mysqlTable("deals", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  companyName: varchar("companyName", { length: 255 }).notNull(),
+  companyNumber: varchar("companyNumber", { length: 20 }),
+  loanAmount: decimal("loanAmount", { precision: 12, scale: 2 }).notNull(),
+  loanType: varchar("loanType", { length: 100 }).notNull(),
+  loanTermMonths: int("loanTermMonths"),
+  sector: varchar("sector", { length: 100 }),
+  status: mysqlEnum("status", ["pending", "analysing", "complete", "flagged", "declined", "approved"]).default("pending").notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Deal = typeof deals.$inferSelect;
+export type InsertDeal = typeof deals.$inferInsert;
+
+// ─── AI Analyses (results from the 8-domain analyser) ─────────────────────────
+export const analyses = mysqlTable("analyses", {
+  id: int("id").autoincrement().primaryKey(),
+  dealId: int("dealId").notNull(),
+  userId: int("userId").notNull(),
+  creditScore: int("creditScore"),
+  fraudScore: int("fraudScore"),
+  affordabilityScore: int("affordabilityScore"),
+  dataConfidenceScore: int("dataConfidenceScore"),
+  recommendation: mysqlEnum("recommendation", ["PROCEED", "REVIEW", "DECLINE"]),
+  recommendationReason: text("recommendationReason"),
+  fraudMatrixJson: json("fraudMatrixJson"),
+  scoresJson: json("scoresJson"),
+  narrativeJson: json("narrativeJson"),
+  keyFlagsJson: json("keyFlagsJson"),
+  rawText: text("rawText"),
+  documentsAnalysed: int("documentsAnalysed").default(0),
+  processingTimeMs: int("processingTimeMs"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Analysis = typeof analyses.$inferSelect;
+export type InsertAnalysis = typeof analyses.$inferInsert;
+
+// ─── Portfolio Loans (funded loans being monitored) ───────────────────────────
+export const portfolioLoans = mysqlTable("portfolio_loans", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  dealId: int("dealId"),
+  companyName: varchar("companyName", { length: 255 }).notNull(),
+  loanAmount: decimal("loanAmount", { precision: 12, scale: 2 }).notNull(),
+  outstandingBalance: decimal("outstandingBalance", { precision: 12, scale: 2 }).notNull(),
+  monthlyRepayment: decimal("monthlyRepayment", { precision: 10, scale: 2 }).notNull(),
+  interestRate: decimal("interestRate", { precision: 5, scale: 2 }).notNull(),
+  startDate: timestamp("startDate").notNull(),
+  maturityDate: timestamp("maturityDate").notNull(),
+  sector: varchar("sector", { length: 100 }),
+  status: mysqlEnum("status", ["current", "watch", "arrears", "default", "redeemed"]).default("current").notNull(),
+  riskRating: mysqlEnum("riskRating", ["green", "amber", "red"]).default("green").notNull(),
+  lastMonitoredAt: timestamp("lastMonitoredAt"),
+  earlyWarningFlags: json("earlyWarningFlags"),
+  revenueLastMonth: decimal("revenueLastMonth", { precision: 12, scale: 2 }),
+  revenueTrend: mysqlEnum("revenueTrend", ["improving", "stable", "declining"]).default("stable"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PortfolioLoan = typeof portfolioLoans.$inferSelect;
+export type InsertPortfolioLoan = typeof portfolioLoans.$inferInsert;
+
+// ─── Fraud Checks (velocity & network fraud detection log) ────────────────────
+export const fraudChecks = mysqlTable("fraud_checks", {
+  id: int("id").autoincrement().primaryKey(),
+  dealId: int("dealId").notNull(),
+  userId: int("userId").notNull(),
+  checkType: varchar("checkType", { length: 100 }).notNull(),
+  result: mysqlEnum("result", ["PASS", "FLAG", "ALERT", "REQUIRES_LIVE_API"]).notNull(),
+  details: text("details"),
+  riskScore: int("riskScore").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FraudCheck = typeof fraudChecks.$inferSelect;
+export type InsertFraudCheck = typeof fraudChecks.$inferInsert;
+
+// ─── Policy Rules (lender-configurable policy engine) ─────────────────────────
+export const policyRules = mysqlTable("policy_rules", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  ruleName: varchar("ruleName", { length: 255 }).notNull(),
+  ruleType: mysqlEnum("ruleType", ["auto_decline", "auto_approve", "flag_review", "pricing", "condition"]).notNull(),
+  field: varchar("field", { length: 100 }).notNull(),
+  operator: mysqlEnum("operator", ["gt", "lt", "gte", "lte", "eq", "neq", "contains"]).notNull(),
+  value: varchar("value", { length: 255 }).notNull(),
+  action: text("action").notNull(),
+  isActive: boolean("isActive").default(true).notNull(),
+  priority: int("priority").default(100).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type PolicyRule = typeof policyRules.$inferSelect;
+export type InsertPolicyRule = typeof policyRules.$inferInsert;
+
+// ─── Model Metrics (continuous learning & drift monitoring) ───────────────────
+export const modelMetrics = mysqlTable("model_metrics", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  metricDate: timestamp("metricDate").defaultNow().notNull(),
+  totalDecisions: int("totalDecisions").default(0),
+  autoApprovalRate: decimal("autoApprovalRate", { precision: 5, scale: 2 }),
+  averageCreditScore: decimal("averageCreditScore", { precision: 5, scale: 2 }),
+  averageFraudScore: decimal("averageFraudScore", { precision: 5, scale: 2 }),
+  proceedRate: decimal("proceedRate", { precision: 5, scale: 2 }),
+  reviewRate: decimal("reviewRate", { precision: 5, scale: 2 }),
+  declineRate: decimal("declineRate", { precision: 5, scale: 2 }),
+  avgProcessingTimeMs: int("avgProcessingTimeMs"),
+  driftPsi: decimal("driftPsi", { precision: 5, scale: 4 }),
+  driftAlert: boolean("driftAlert").default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ModelMetric = typeof modelMetrics.$inferSelect;
+export type InsertModelMetric = typeof modelMetrics.$inferInsert;
+
+// ─── Open Banking Connections ─────────────────────────────────────────────────
+export const openBankingConnections = mysqlTable("open_banking_connections", {
+  id: int("id").autoincrement().primaryKey(),
+  dealId: int("dealId").notNull(),
+  userId: int("userId").notNull(),
+  bankName: varchar("bankName", { length: 100 }),
+  connectionStatus: mysqlEnum("connectionStatus", ["pending", "connected", "expired", "revoked"]).default("pending").notNull(),
+  consentExpiresAt: timestamp("consentExpiresAt"),
+  transactionDataJson: json("transactionDataJson"),
+  monthlyRevenueJson: json("monthlyRevenueJson"),
+  nsfCount: int("nsfCount").default(0),
+  avgMonthlyRevenue: decimal("avgMonthlyRevenue", { precision: 12, scale: 2 }),
+  revenueVolatility: decimal("revenueVolatility", { precision: 5, scale: 2 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OpenBankingConnection = typeof openBankingConnections.$inferSelect;
+export type InsertOpenBankingConnection = typeof openBankingConnections.$inferInsert;
+
+// ─── Early Access Waitlist ───────────────────────────────────────────────────────────────────────────────
+export const waitlist = mysqlTable("waitlist", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  company: varchar("company", { length: 255 }),
+  role: varchar("role", { length: 100 }),
+  notified: boolean("notified").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Waitlist = typeof waitlist.$inferSelect;
+export type InsertWaitlist = typeof waitlist.$inferInsert;

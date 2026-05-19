@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1778578575265,
+      "tag": "0000_tearful_wraith",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1778593377280,
+      "tag": "0001_whole_boom_boom",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1778751726904,
+      "tag": "0002_graceful_living_lightning",
+      "breakpoints": true
+    }
+  ]
+}
