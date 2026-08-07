@@ -27,6 +27,12 @@ import FcaConsumerDuty from "@/pages/blog/FcaConsumerDuty";
 import CostManualLoanProcessing from "@/pages/blog/CostManualLoanProcessing";
 import EarlyAccess from "@/pages/EarlyAccess";
 import WaitlistAdmin from "@/pages/dashboard/Waitlist";
+import OutfitLayout from "@/pages/outfits/OutfitLayout";
+import OutfitFeed from "@/pages/outfits/Feed";
+import OutfitUpload from "@/pages/outfits/Upload";
+import OutfitBattle from "@/pages/outfits/Battle";
+import OutfitLeaderboard from "@/pages/outfits/Leaderboard";
+import OutfitProfile from "@/pages/outfits/Profile";
 
 function DashboardRouter() {
   return (
@@ -41,7 +47,10 @@ function DashboardRouter() {
         <Route path="/dashboard/ch-extended" component={ChExtended} />
         <Route path="/dashboard/fraud" component={Fraud} />
         <Route path="/dashboard/policy" component={PolicyEngine} />
-        <Route path="/dashboard/model-performance" component={ModelPerformance} />
+        <Route
+          path="/dashboard/model-performance"
+          component={ModelPerformance}
+        />
         <Route path="/dashboard/hmrc-vat" component={HmrcVat} />
         <Route path="/dashboard/postcodes" component={PostcodeEnrich} />
         <Route path="/dashboard/fx-rates" component={FxRates} />
@@ -54,16 +63,44 @@ function DashboardRouter() {
   );
 }
 
+function OutfitArenaRouter() {
+  return (
+    <OutfitLayout>
+      <Switch>
+        <Route path="/outfits" component={OutfitFeed} />
+        <Route path="/outfits/upload" component={OutfitUpload} />
+        <Route path="/outfits/battle" component={OutfitBattle} />
+        <Route path="/outfits/leaderboard" component={OutfitLeaderboard} />
+        <Route path="/outfits/u/:userId">
+          {params => <OutfitProfile userId={params.userId} />}
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </OutfitLayout>
+  );
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={DashboardRouter} />
       <Route path="/dashboard/:rest*" component={DashboardRouter} />
+      <Route path="/outfits/:rest*" component={OutfitArenaRouter} />
+      <Route path="/outfits" component={OutfitArenaRouter} />
       <Route path="/demo" component={Demo} />
-      <Route path="/blog/ai-bank-statement-fraud-detection" component={AiBankStatementFraud} />
-      <Route path="/blog/fca-consumer-duty-ai-underwriting" component={FcaConsumerDuty} />
-      <Route path="/blog/cost-manual-loan-processing" component={CostManualLoanProcessing} />
+      <Route
+        path="/blog/ai-bank-statement-fraud-detection"
+        component={AiBankStatementFraud}
+      />
+      <Route
+        path="/blog/fca-consumer-duty-ai-underwriting"
+        component={FcaConsumerDuty}
+      />
+      <Route
+        path="/blog/cost-manual-loan-processing"
+        component={CostManualLoanProcessing}
+      />
       <Route path="/early-access" component={EarlyAccess} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
