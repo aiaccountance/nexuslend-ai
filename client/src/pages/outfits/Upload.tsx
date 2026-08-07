@@ -18,6 +18,11 @@ const CATEGORIES = [
   "other",
 ] as const;
 
+// Base64 inflates payloads by ~33%, so keep the raw file well under the
+// server's body limit. Mirrored by a server-side guard in outfitsRouter.
+const MAX_IMAGE_MB = 12;
+const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
+
 export default function OutfitUpload() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
@@ -39,6 +44,12 @@ export default function OutfitUpload() {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Please choose an image file");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error(
+        `That photo is ${(file.size / 1024 / 1024).toFixed(1)}MB — please use one under ${MAX_IMAGE_MB}MB.`
+      );
       return;
     }
     const reader = new FileReader();

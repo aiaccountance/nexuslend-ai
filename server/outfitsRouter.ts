@@ -38,7 +38,30 @@ type AiOutfitAnalysis = {
   suggestions: string[];
 };
 
+const UNAVAILABLE_ANALYSIS: AiOutfitAnalysis = {
+  tags: [],
+  style_score: 50,
+  occasion: "everyday",
+  feedback: "AI styling feedback is temporarily unavailable for this photo.",
+  suggestions: [],
+};
+
+/**
+ * Best-effort: a stylist-model outage must never cost the user their upload,
+ * so every failure path degrades to a neutral placeholder analysis.
+ */
 async function analyseOutfitImage(dataUri: string): Promise<AiOutfitAnalysis> {
+  try {
+    return await requestOutfitAnalysis(dataUri);
+  } catch (err) {
+    console.error("[Outfit Arena] AI stylist analysis failed:", err);
+    return UNAVAILABLE_ANALYSIS;
+  }
+}
+
+async function requestOutfitAnalysis(
+  dataUri: string
+): Promise<AiOutfitAnalysis> {
   const result = await invokeLLM({
     messages: [
       { role: "system", content: OUTFIT_STYLIST_SYSTEM_PROMPT },
@@ -60,16 +83,7 @@ async function analyseOutfitImage(dataUri: string): Promise<AiOutfitAnalysis> {
   const rawContent = result.choices[0]?.message?.content;
   const textContent = typeof rawContent === "string" ? rawContent : "";
   const jsonMatch = textContent.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    return {
-      tags: [],
-      style_score: 50,
-      occasion: "everyday",
-      feedback:
-        "AI styling feedback is temporarily unavailable for this photo.",
-      suggestions: [],
-    };
-  }
+  if (!jsonMatch) return UNAVAILABLE_ANALYSIS;
   try {
     const parsed = JSON.parse(jsonMatch[0]) as Partial<AiOutfitAnalysis>;
     return {
@@ -88,22 +102,44 @@ async function analyseOutfitImage(dataUri: string): Promise<AiOutfitAnalysis> {
         : [],
     };
   } catch {
-    return {
-      tags: [],
-      style_score: 50,
-      occasion: "everyday",
-      feedback:
-        "AI styling feedback is temporarily unavailable for this photo.",
-      suggestions: [],
-    };
+    return UNAVAILABLE_ANALYSIS;
   }
 }
 
+/**
+ * JSON columns come back parsed on some MySQL-compatible engines (TiDB) and as
+ * raw strings on others (MariaDB), so normalise to an array either way.
+ */
+function asStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.trim() !== "") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function withAvgRating<
-  T extends { post: { ratingSum: number; ratingCount: number } },
+  T extends {
+    post: {
+      ratingSum: number;
+      ratingCount: number;
+      aiTags: unknown;
+      aiSuggestions: unknown;
+    };
+  },
 >(row: T) {
   return {
     ...row,
+    post: {
+      ...row.post,
+      aiTags: asStringArray(row.post.aiTags),
+      aiSuggestions: asStringArray(row.post.aiSuggestions),
+    },
     avgRating:
       row.post.ratingCount > 0
         ? row.post.ratingSum / row.post.ratingCount
@@ -115,7 +151,9 @@ export const outfitsRouter = router({
   upload: protectedProcedure
     .input(
       z.object({
-        fileBase64: z.string().min(1),
+        // ~12MB of image once base64-decoded; the client blocks this earlier
+        // with a friendlier message, this is the backstop.
+        fileBase64: z.string().min(1).max(17_000_000),
         mimeType: z.string().startsWith("image/"),
         caption: z.string().max(500).optional(),
         category: CATEGORY_ENUM.default("other"),
@@ -148,11 +186,15 @@ export const outfitsRouter = router({
       });
 
       const insertId = (result as { insertId?: number })?.insertId;
-      const post = insertId
+      const row = insertId
         ? await outfitsDb.getOutfitPostById(insertId)
         : undefined;
 
-      return { success: true, post, analysis };
+      return {
+        success: true,
+        post: row ? withAvgRating(row) : undefined,
+        analysis,
+      };
     }),
 
   feed: publicProcedure

@@ -38,7 +38,6 @@ export async function getOutfitPostById(id: number) {
     .select({
       post: outfitPosts,
       authorName: users.name,
-      authorOpenId: users.openId,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
@@ -77,7 +76,6 @@ export async function listOutfitFeed(opts: {
     .select({
       post: outfitPosts,
       authorName: users.name,
-      authorOpenId: users.openId,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
@@ -153,21 +151,14 @@ export async function getUserRatingForPost(postId: number, userId: number) {
 }
 
 // ─── Battles / Elo ────────────────────────────────────────────────────────────
-export async function getRandomMatchupPair(excludePostId?: number) {
+export async function getRandomMatchupPair() {
   const db = await getDb();
   if (!db) return [];
-  const conditions = excludePostId
-    ? [sql`${outfitPosts.id} != ${excludePostId}`]
-    : [];
-  const query = db
+  return db
     .select()
     .from(outfitPosts)
     .orderBy(sql`RAND()`)
     .limit(2);
-  if (conditions.length > 0) {
-    return query.where(and(...conditions));
-  }
-  return query;
 }
 
 export async function recordBattleVote(
@@ -245,7 +236,6 @@ export async function leaderboardPosts(
     .select({
       post: outfitPosts,
       authorName: users.name,
-      authorOpenId: users.openId,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
@@ -268,7 +258,6 @@ export async function leaderboardUsers(
     .select({
       userId: outfitPosts.userId,
       authorName: users.name,
-      authorOpenId: users.openId,
       postCount: sql<number>`COUNT(${outfitPosts.id})`,
       totalWins: sql<number>`COALESCE(SUM(${outfitPosts.battleWins}), 0)`,
       avgElo: sql<number>`AVG(${outfitPosts.eloRating})`,

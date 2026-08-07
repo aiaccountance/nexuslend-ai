@@ -83,7 +83,9 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/dashboard" component={DashboardRouter} />
       <Route path="/dashboard/:rest*" component={DashboardRouter} />
-      <Route path="/outfits/:rest*" component={OutfitArenaRouter} />
+      {/* `/*` (not `:rest*`, which only matches one segment) so multi-segment
+          paths like /outfits/u/:userId reach the Outfit Arena router. */}
+      <Route path="/outfits/*" component={OutfitArenaRouter} />
       <Route path="/outfits" component={OutfitArenaRouter} />
       <Route path="/demo" component={Demo} />
       <Route path="/blog/ai-bank-statement-fraud-detection" component={AiBankStatementFraud} />

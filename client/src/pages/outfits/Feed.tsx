@@ -145,6 +145,35 @@ export default function Feed() {
               >
                 by {authorName || "Anonymous"}
               </Link>
+              {post.aiTags.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {post.aiTags.slice(0, 3).map(tag => (
+                    <span
+                      key={tag}
+                      className="text-[10px] px-1.5 py-0.5 rounded-full bg-fuchsia-500/10 text-fuchsia-200/80 border border-fuchsia-400/20"
+                    >
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {post.aiFeedback && (
+                <details className="group/ai">
+                  <summary className="text-[11px] text-fuchsia-300/70 hover:text-fuchsia-300 cursor-pointer list-none flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" /> AI stylist take
+                  </summary>
+                  <p className="text-xs text-white/60 mt-1.5 leading-relaxed">
+                    {post.aiFeedback}
+                  </p>
+                  {post.aiSuggestions.length > 0 && (
+                    <ul className="text-xs text-white/50 mt-1.5 space-y-0.5 list-disc list-inside">
+                      {post.aiSuggestions.map(s => (
+                        <li key={s}>{s}</li>
+                      ))}
+                    </ul>
+                  )}
+                </details>
+              )}
               <div className="flex items-center justify-between pt-1">
                 <StarRating
                   value={avgRating}
