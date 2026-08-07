@@ -47,10 +47,7 @@ function DashboardRouter() {
         <Route path="/dashboard/ch-extended" component={ChExtended} />
         <Route path="/dashboard/fraud" component={Fraud} />
         <Route path="/dashboard/policy" component={PolicyEngine} />
-        <Route
-          path="/dashboard/model-performance"
-          component={ModelPerformance}
-        />
+        <Route path="/dashboard/model-performance" component={ModelPerformance} />
         <Route path="/dashboard/hmrc-vat" component={HmrcVat} />
         <Route path="/dashboard/postcodes" component={PostcodeEnrich} />
         <Route path="/dashboard/fx-rates" component={FxRates} />
@@ -89,18 +86,9 @@ function Router() {
       <Route path="/outfits/:rest*" component={OutfitArenaRouter} />
       <Route path="/outfits" component={OutfitArenaRouter} />
       <Route path="/demo" component={Demo} />
-      <Route
-        path="/blog/ai-bank-statement-fraud-detection"
-        component={AiBankStatementFraud}
-      />
-      <Route
-        path="/blog/fca-consumer-duty-ai-underwriting"
-        component={FcaConsumerDuty}
-      />
-      <Route
-        path="/blog/cost-manual-loan-processing"
-        component={CostManualLoanProcessing}
-      />
+      <Route path="/blog/ai-bank-statement-fraud-detection" component={AiBankStatementFraud} />
+      <Route path="/blog/fca-consumer-duty-ai-underwriting" component={FcaConsumerDuty} />
+      <Route path="/blog/cost-manual-loan-processing" component={CostManualLoanProcessing} />
       <Route path="/early-access" component={EarlyAccess} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

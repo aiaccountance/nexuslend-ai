@@ -36,19 +36,8 @@ export const deals = mysqlTable("deals", {
   loanType: varchar("loanType", { length: 100 }).notNull(),
   loanTermMonths: int("loanTermMonths"),
   sector: varchar("sector", { length: 100 }),
-  status: mysqlEnum("status", [
-    "pending",
-    "analysing",
-    "complete",
-    "flagged",
-    "declined",
-    "approved",
-  ])
-    .default("pending")
-    .notNull(),
-  priority: mysqlEnum("priority", ["low", "medium", "high"])
-    .default("medium")
-    .notNull(),
+  status: mysqlEnum("status", ["pending", "analysing", "complete", "flagged", "declined", "approved"]).default("pending").notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -88,38 +77,18 @@ export const portfolioLoans = mysqlTable("portfolio_loans", {
   dealId: int("dealId"),
   companyName: varchar("companyName", { length: 255 }).notNull(),
   loanAmount: decimal("loanAmount", { precision: 12, scale: 2 }).notNull(),
-  outstandingBalance: decimal("outstandingBalance", {
-    precision: 12,
-    scale: 2,
-  }).notNull(),
-  monthlyRepayment: decimal("monthlyRepayment", {
-    precision: 10,
-    scale: 2,
-  }).notNull(),
+  outstandingBalance: decimal("outstandingBalance", { precision: 12, scale: 2 }).notNull(),
+  monthlyRepayment: decimal("monthlyRepayment", { precision: 10, scale: 2 }).notNull(),
   interestRate: decimal("interestRate", { precision: 5, scale: 2 }).notNull(),
   startDate: timestamp("startDate").notNull(),
   maturityDate: timestamp("maturityDate").notNull(),
   sector: varchar("sector", { length: 100 }),
-  status: mysqlEnum("status", [
-    "current",
-    "watch",
-    "arrears",
-    "default",
-    "redeemed",
-  ])
-    .default("current")
-    .notNull(),
-  riskRating: mysqlEnum("riskRating", ["green", "amber", "red"])
-    .default("green")
-    .notNull(),
+  status: mysqlEnum("status", ["current", "watch", "arrears", "default", "redeemed"]).default("current").notNull(),
+  riskRating: mysqlEnum("riskRating", ["green", "amber", "red"]).default("green").notNull(),
   lastMonitoredAt: timestamp("lastMonitoredAt"),
   earlyWarningFlags: json("earlyWarningFlags"),
   revenueLastMonth: decimal("revenueLastMonth", { precision: 12, scale: 2 }),
-  revenueTrend: mysqlEnum("revenueTrend", [
-    "improving",
-    "stable",
-    "declining",
-  ]).default("stable"),
+  revenueTrend: mysqlEnum("revenueTrend", ["improving", "stable", "declining"]).default("stable"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -133,12 +102,7 @@ export const fraudChecks = mysqlTable("fraud_checks", {
   dealId: int("dealId").notNull(),
   userId: int("userId").notNull(),
   checkType: varchar("checkType", { length: 100 }).notNull(),
-  result: mysqlEnum("result", [
-    "PASS",
-    "FLAG",
-    "ALERT",
-    "REQUIRES_LIVE_API",
-  ]).notNull(),
+  result: mysqlEnum("result", ["PASS", "FLAG", "ALERT", "REQUIRES_LIVE_API"]).notNull(),
   details: text("details"),
   riskScore: int("riskScore").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -152,23 +116,9 @@ export const policyRules = mysqlTable("policy_rules", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   ruleName: varchar("ruleName", { length: 255 }).notNull(),
-  ruleType: mysqlEnum("ruleType", [
-    "auto_decline",
-    "auto_approve",
-    "flag_review",
-    "pricing",
-    "condition",
-  ]).notNull(),
+  ruleType: mysqlEnum("ruleType", ["auto_decline", "auto_approve", "flag_review", "pricing", "condition"]).notNull(),
   field: varchar("field", { length: 100 }).notNull(),
-  operator: mysqlEnum("operator", [
-    "gt",
-    "lt",
-    "gte",
-    "lte",
-    "eq",
-    "neq",
-    "contains",
-  ]).notNull(),
+  operator: mysqlEnum("operator", ["gt", "lt", "gte", "lte", "eq", "neq", "contains"]).notNull(),
   value: varchar("value", { length: 255 }).notNull(),
   action: text("action").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
@@ -207,14 +157,7 @@ export const openBankingConnections = mysqlTable("open_banking_connections", {
   dealId: int("dealId").notNull(),
   userId: int("userId").notNull(),
   bankName: varchar("bankName", { length: 100 }),
-  connectionStatus: mysqlEnum("connectionStatus", [
-    "pending",
-    "connected",
-    "expired",
-    "revoked",
-  ])
-    .default("pending")
-    .notNull(),
+  connectionStatus: mysqlEnum("connectionStatus", ["pending", "connected", "expired", "revoked"]).default("pending").notNull(),
   consentExpiresAt: timestamp("consentExpiresAt"),
   transactionDataJson: json("transactionDataJson"),
   monthlyRevenueJson: json("monthlyRevenueJson"),
@@ -226,8 +169,7 @@ export const openBankingConnections = mysqlTable("open_banking_connections", {
 });
 
 export type OpenBankingConnection = typeof openBankingConnections.$inferSelect;
-export type InsertOpenBankingConnection =
-  typeof openBankingConnections.$inferInsert;
+export type InsertOpenBankingConnection = typeof openBankingConnections.$inferInsert;
 
 // ─── Early Access Waitlist ───────────────────────────────────────────────────────────────────────────────
 export const waitlist = mysqlTable("waitlist", {
@@ -242,7 +184,6 @@ export const waitlist = mysqlTable("waitlist", {
 
 export type Waitlist = typeof waitlist.$inferSelect;
 export type InsertWaitlist = typeof waitlist.$inferInsert;
-
 // ─── Outfit Arena — outfit posts ─────────────────────────────────────────────
 export const outfitPosts = mysqlTable("outfit_posts", {
   id: int("id").autoincrement().primaryKey(),
