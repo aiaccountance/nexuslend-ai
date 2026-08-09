@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
@@ -123,6 +124,18 @@ function asStringArray(value: unknown): string[] {
   return [];
 }
 
+/** Surface rule violations as 4xx codes with their message intact. */
+async function enforcingRules<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err instanceof outfitsDb.OutfitRuleError) {
+      throw new TRPCError({ code: err.code, message: err.message });
+    }
+    throw err;
+  }
+}
+
 function withAvgRating<
   T extends {
     post: {
@@ -227,7 +240,9 @@ export const outfitsRouter = router({
       z.object({ postId: z.number(), rating: z.number().int().min(1).max(5) })
     )
     .mutation(async ({ ctx, input }) => {
-      await outfitsDb.rateOutfitPost(input.postId, ctx.user.id, input.rating);
+      await enforcingRules(() =>
+        outfitsDb.rateOutfitPost(input.postId, ctx.user.id, input.rating)
+      );
       return { success: true };
     }),
 
@@ -239,8 +254,8 @@ export const outfitsRouter = router({
     }),
 
   battle: router({
-    next: publicProcedure.query(async () => {
-      const pair = await outfitsDb.getRandomMatchupPair();
+    next: publicProcedure.query(async ({ ctx }) => {
+      const pair = await outfitsDb.getRandomMatchupPair(ctx.user?.id);
       if (pair.length < 2) return null;
       return { postA: pair[0], postB: pair[1] };
     }),
@@ -254,11 +269,13 @@ export const outfitsRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const { newEloA, newEloB } = await outfitsDb.recordBattleVote(
-          input.postAId,
-          input.postBId,
-          input.winnerId,
-          ctx.user.id
+        const { newEloA, newEloB } = await enforcingRules(() =>
+          outfitsDb.recordBattleVote(
+            input.postAId,
+            input.postBId,
+            input.winnerId,
+            ctx.user.id
+          )
         );
         return { success: true, newEloA, newEloB };
       }),
@@ -329,7 +346,9 @@ export const outfitsRouter = router({
     toggle: protectedProcedure
       .input(z.object({ userId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        return outfitsDb.toggleFollow(ctx.user.id, input.userId);
+        return enforcingRules(() =>
+          outfitsDb.toggleFollow(ctx.user.id, input.userId)
+        );
       }),
   }),
 });

@@ -59,7 +59,11 @@ export default function Battle() {
       {!nextQuery.isLoading && !nextQuery.data && (
         <div className="flex flex-col items-center justify-center py-24 text-center text-white/40 gap-3">
           <ImageOff className="w-10 h-10" />
-          <p>Need at least 2 posted outfits to start a battle.</p>
+          <p>
+            {isAuthenticated
+              ? "No matchups yet — you can't judge your own outfits, so there need to be at least 2 from other people."
+              : "Need at least 2 posted outfits to start a battle."}
+          </p>
         </div>
       )}
 

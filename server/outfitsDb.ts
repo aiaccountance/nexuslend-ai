@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, ne, and, desc, sql, inArray } from "drizzle-orm";
 import {
   outfitPosts,
   InsertOutfitPost,
@@ -10,6 +10,20 @@ import {
 import { getDb } from "./db";
 
 const K_FACTOR = 32;
+
+/**
+ * A rule the user broke (rating their own outfit, double-voting a matchup)
+ * rather than a server fault — the router maps these to 4xx tRPC codes.
+ */
+export class OutfitRuleError extends Error {
+  constructor(
+    message: string,
+    readonly code: "FORBIDDEN" | "CONFLICT" | "BAD_REQUEST" | "NOT_FOUND"
+  ) {
+    super(message);
+    this.name = "OutfitRuleError";
+  }
+}
 
 export type OutfitCategory =
   | "casual"
@@ -107,6 +121,16 @@ export async function rateOutfitPost(
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  const [target] = await db
+    .select({ userId: outfitPosts.userId })
+    .from(outfitPosts)
+    .where(eq(outfitPosts.id, postId))
+    .limit(1);
+  if (!target) throw new OutfitRuleError("Outfit not found", "NOT_FOUND");
+  if (target.userId === userId) {
+    throw new OutfitRuleError("You cannot rate your own outfit", "FORBIDDEN");
+  }
+
   const existing = await db
     .select()
     .from(outfitRatings)
@@ -151,14 +175,51 @@ export async function getUserRatingForPost(postId: number, userId: number) {
 }
 
 // ─── Battles / Elo ────────────────────────────────────────────────────────────
-export async function getRandomMatchupPair() {
+/**
+ * Voters never judge their own outfits, so exclude them from the draw rather
+ * than serving a matchup the vote endpoint would then reject.
+ */
+export async function getRandomMatchupPair(excludeUserId?: number) {
   const db = await getDb();
   if (!db) return [];
-  return db
+  const query = db
     .select()
     .from(outfitPosts)
     .orderBy(sql`RAND()`)
     .limit(2);
+  if (excludeUserId !== undefined) {
+    return query.where(ne(outfitPosts.userId, excludeUserId));
+  }
+  return query;
+}
+
+/** Unordered pair key, so (A,B) and (B,A) count as the same matchup. */
+function matchupKey(postAId: number, postBId: number) {
+  const [low, high] =
+    postAId < postBId ? [postAId, postBId] : [postBId, postAId];
+  return { low, high };
+}
+
+export async function hasVotedOnMatchup(
+  postAId: number,
+  postBId: number,
+  voterUserId: number
+) {
+  const db = await getDb();
+  if (!db) return false;
+  const { low, high } = matchupKey(postAId, postBId);
+  const rows = await db
+    .select({ id: outfitMatchups.id })
+    .from(outfitMatchups)
+    .where(
+      and(
+        eq(outfitMatchups.voterUserId, voterUserId),
+        sql`LEAST(${outfitMatchups.postAId}, ${outfitMatchups.postBId}) = ${low}`,
+        sql`GREATEST(${outfitMatchups.postAId}, ${outfitMatchups.postBId}) = ${high}`
+      )
+    )
+    .limit(1);
+  return rows.length > 0;
 }
 
 export async function recordBattleVote(
@@ -169,8 +230,17 @@ export async function recordBattleVote(
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  if (postAId === postBId) {
+    throw new OutfitRuleError(
+      "A matchup needs two different outfits",
+      "BAD_REQUEST"
+    );
+  }
   if (winnerId !== postAId && winnerId !== postBId) {
-    throw new Error("winnerId must be one of the two posts in the matchup");
+    throw new OutfitRuleError(
+      "winnerId must be one of the two posts in the matchup",
+      "BAD_REQUEST"
+    );
   }
 
   const rows = await db
@@ -180,7 +250,26 @@ export async function recordBattleVote(
 
   const postA = rows.find(r => r.id === postAId);
   const postB = rows.find(r => r.id === postBId);
-  if (!postA || !postB) throw new Error("One or both posts not found");
+  if (!postA || !postB)
+    throw new OutfitRuleError("One or both posts not found", "NOT_FOUND");
+
+  if (voterUserId !== null) {
+    // Judging your own outfit is a conflict of interest.
+    if (postA.userId === voterUserId || postB.userId === voterUserId) {
+      throw new OutfitRuleError(
+        "You cannot vote on a matchup with your own outfit",
+        "FORBIDDEN"
+      );
+    }
+    // One vote per person per pairing, otherwise Elo can be farmed by
+    // repeatedly voting the same matchup.
+    if (await hasVotedOnMatchup(postAId, postBId, voterUserId)) {
+      throw new OutfitRuleError(
+        "You have already voted on this matchup",
+        "CONFLICT"
+      );
+    }
+  }
 
   const expectedA = expectedScore(postA.eloRating, postB.eloRating);
   const expectedB = 1 - expectedA;
@@ -331,7 +420,8 @@ export async function isFollowing(followerId: number, followingId: number) {
 export async function toggleFollow(followerId: number, followingId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  if (followerId === followingId) throw new Error("Cannot follow yourself");
+  if (followerId === followingId)
+    throw new OutfitRuleError("You cannot follow yourself", "FORBIDDEN");
 
   const existing = await db
     .select()

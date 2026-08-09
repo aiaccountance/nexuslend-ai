@@ -55,6 +55,9 @@ function ctxFor(user: User | null): TrpcContext {
 
 let alice: User;
 let bob: User;
+// Neutral judges: they post nothing, so they may vote on any matchup.
+let carol: User;
+let dave: User;
 let dbAvailable = false;
 
 beforeAll(async () => {
@@ -77,21 +80,35 @@ beforeAll(async () => {
       name: "Bob",
       email: "bob@test.dev",
     });
+    await db.upsertUser({
+      openId: "test-carol",
+      name: "Carol",
+      email: "carol@test.dev",
+    });
+    await db.upsertUser({
+      openId: "test-dave",
+      name: "Dave",
+      email: "dave@test.dev",
+    });
     alice = (await db.getUserByOpenId("test-alice"))!;
     bob = (await db.getUserByOpenId("test-bob"))!;
-    dbAvailable = Boolean(alice && bob);
+    carol = (await db.getUserByOpenId("test-carol"))!;
+    dave = (await db.getUserByOpenId("test-dave"))!;
+    dbAvailable = Boolean(alice && bob && carol && dave);
   } catch {
     dbAvailable = false;
   }
 });
 
-// These tests need a reachable database; skip cleanly when there isn't one.
+// These tests need a reachable database. Without one they report as SKIPPED
+// rather than passing — a silent pass would make an unreachable database look
+// like a green suite.
 const dbIt: typeof it = ((name: string, fn: never, timeout?: number) =>
   it(
     name,
-    async (...args: unknown[]) => {
-      if (!dbAvailable) return;
-      return (fn as unknown as (...a: unknown[]) => unknown)(...args);
+    async (ctx: { skip: () => void }) => {
+      if (!dbAvailable) return ctx.skip();
+      return (fn as unknown as (c: unknown) => unknown)(ctx);
     },
     timeout
   )) as typeof it;
@@ -269,7 +286,7 @@ describe("outfits.rate", () => {
       .createCaller(ctxFor(bob))
       .outfits.rate({ postId: id, rating: 5 });
     await appRouter
-      .createCaller(ctxFor(alice))
+      .createCaller(ctxFor(carol))
       .outfits.rate({ postId: id, rating: 3 });
 
     const view = await appRouter
@@ -288,6 +305,20 @@ describe("outfits.rate", () => {
     await expect(
       caller.outfits.rate({ postId: created.post!.post.id, rating: 0 })
     ).rejects.toThrow();
+  });
+
+  dbIt("refuses to let an author rate their own outfit", async () => {
+    const created = await post(alice, "casual", "my own fit");
+    const caller = appRouter.createCaller(ctxFor(alice));
+
+    await expect(
+      caller.outfits.rate({ postId: created.post!.post.id, rating: 5 })
+    ).rejects.toThrow(/your own outfit/i);
+
+    const view = await appRouter
+      .createCaller(ctxFor(null))
+      .outfits.getPost({ id: created.post!.post.id });
+    expect(view!.post.ratingCount).toBe(0);
   });
 
   dbIt("requires authentication", async () => {
@@ -317,7 +348,7 @@ describe("outfits.battle", () => {
       const b = (await post(bob)).post!.post;
 
       const res = await appRouter
-        .createCaller(ctxFor(bob))
+        .createCaller(ctxFor(carol))
         .outfits.battle.vote({ postAId: a.id, postBId: b.id, winnerId: a.id });
 
       // Equal starting ratings (1200 vs 1200) → winner +16, loser -16 at K=32
@@ -343,19 +374,20 @@ describe("outfits.battle", () => {
   dbIt("awards fewer points when a favourite beats an underdog", async () => {
     const a = (await post(alice)).post!.post;
     const b = (await post(bob)).post!.post;
-    const caller = appRouter.createCaller(ctxFor(bob));
 
-    // Build A up first so it becomes the clear favourite.
-    await caller.outfits.battle.vote({
+    // Two different judges, since one judge may only vote a pairing once.
+    await appRouter.createCaller(ctxFor(carol)).outfits.battle.vote({
       postAId: a.id,
       postBId: b.id,
       winnerId: a.id,
     });
-    const second = await caller.outfits.battle.vote({
-      postAId: a.id,
-      postBId: b.id,
-      winnerId: a.id,
-    });
+    const second = await appRouter
+      .createCaller(ctxFor(dave))
+      .outfits.battle.vote({
+        postAId: a.id,
+        postBId: b.id,
+        winnerId: a.id,
+      });
 
     // Second win is worth less than the first (16) because A was already ahead.
     expect(second.newEloA - 1216).toBeLessThan(16);
@@ -365,7 +397,7 @@ describe("outfits.battle", () => {
   dbIt("rejects a winner that is not part of the matchup", async () => {
     const a = (await post(alice)).post!.post;
     const b = (await post(bob)).post!.post;
-    const caller = appRouter.createCaller(ctxFor(bob));
+    const caller = appRouter.createCaller(ctxFor(carol));
 
     await expect(
       caller.outfits.battle.vote({
@@ -375,6 +407,97 @@ describe("outfits.battle", () => {
       })
     ).rejects.toThrow();
   });
+
+  dbIt(
+    "refuses a second vote on the same pairing by the same judge",
+    async () => {
+      const a = (await post(alice)).post!.post;
+      const b = (await post(bob)).post!.post;
+      const caller = appRouter.createCaller(ctxFor(carol));
+
+      await caller.outfits.battle.vote({
+        postAId: a.id,
+        postBId: b.id,
+        winnerId: a.id,
+      });
+
+      // Same pairing again — including with the sides swapped — is rejected,
+      // otherwise a single user could farm Elo for a favourite outfit.
+      await expect(
+        caller.outfits.battle.vote({
+          postAId: a.id,
+          postBId: b.id,
+          winnerId: a.id,
+        })
+      ).rejects.toThrow(/already voted/i);
+      await expect(
+        caller.outfits.battle.vote({
+          postAId: b.id,
+          postBId: a.id,
+          winnerId: a.id,
+        })
+      ).rejects.toThrow(/already voted/i);
+
+      // ...and the Elo only moved once.
+      const after = await appRouter
+        .createCaller(ctxFor(null))
+        .outfits.getPost({ id: a.id });
+      expect(after!.post.eloRating).toBe(1216);
+      expect(after!.post.battleWins).toBe(1);
+    }
+  );
+
+  dbIt("lets a different judge vote the same pairing", async () => {
+    const a = (await post(alice)).post!.post;
+    const b = (await post(bob)).post!.post;
+
+    await appRouter.createCaller(ctxFor(carol)).outfits.battle.vote({
+      postAId: a.id,
+      postBId: b.id,
+      winnerId: a.id,
+    });
+    await expect(
+      appRouter.createCaller(ctxFor(dave)).outfits.battle.vote({
+        postAId: a.id,
+        postBId: b.id,
+        winnerId: a.id,
+      })
+    ).resolves.toBeDefined();
+  });
+
+  dbIt(
+    "refuses a vote on a matchup containing the judge's own outfit",
+    async () => {
+      const a = (await post(alice)).post!.post;
+      const b = (await post(bob)).post!.post;
+
+      await expect(
+        appRouter.createCaller(ctxFor(alice)).outfits.battle.vote({
+          postAId: a.id,
+          postBId: b.id,
+          winnerId: a.id,
+        })
+      ).rejects.toThrow(/your own outfit/i);
+    }
+  );
+
+  dbIt(
+    "keeps a signed-in judge's own outfits out of their matchups",
+    async () => {
+      await post(alice);
+      await post(alice);
+      await post(bob);
+
+      const matchup = await appRouter
+        .createCaller(ctxFor(alice))
+        .outfits.battle.next();
+
+      if (matchup) {
+        expect(matchup.postA.userId).not.toBe(alice.id);
+        expect(matchup.postB.userId).not.toBe(alice.id);
+      }
+    }
+  );
 
   dbIt("requires authentication to vote", async () => {
     const a = (await post(alice)).post!.post;

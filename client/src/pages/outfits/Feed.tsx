@@ -26,7 +26,7 @@ const CATEGORIES = [
 export default function Feed() {
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>("new");
   const [category, setCategory] = useState<string | undefined>(undefined);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
 
   const feedQuery = trpc.outfits.feed.useQuery({
@@ -37,7 +37,7 @@ export default function Feed() {
 
   const rateMutation = trpc.outfits.rate.useMutation({
     onSuccess: () => utils.outfits.feed.invalidate(),
-    onError: () => toast.error("Couldn't save your rating"),
+    onError: err => toast.error(err.message || "Couldn't save your rating"),
   });
 
   const handleRate = (postId: number, rating: number) => {
@@ -177,13 +177,15 @@ export default function Feed() {
               <div className="flex items-center justify-between pt-1">
                 <StarRating
                   value={avgRating}
-                  interactive
+                  interactive={post.userId !== user?.id}
                   onRate={rating => handleRate(post.id, rating)}
                 />
                 <span className="text-[11px] text-white/40">
-                  {post.ratingCount > 0
-                    ? `${avgRating?.toFixed(1)} (${post.ratingCount})`
-                    : "No ratings yet"}
+                  {post.userId === user?.id
+                    ? "Your outfit"
+                    : post.ratingCount > 0
+                      ? `${avgRating?.toFixed(1)} (${post.ratingCount})`
+                      : "No ratings yet"}
                 </span>
               </div>
             </div>
