@@ -14,6 +14,8 @@ import {
   Sparkles,
   Send,
   Check,
+  UserRound,
+  Shapes,
 } from "lucide-react";
 
 const SLOTS = [
@@ -37,7 +39,7 @@ const CATEGORIES = [
 const MAX_IMAGE_MB = 12;
 const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 
-type Tab = "closet" | "build" | "saved";
+type Tab = "closet" | "build" | "saved" | "me";
 
 export default function Wardrobe() {
   const { isAuthenticated, loading } = useAuth();
@@ -82,6 +84,7 @@ export default function Wardrobe() {
             ["closet", "My Closet"],
             ["build", "Build an Outfit"],
             ["saved", "Saved Outfits"],
+            ["me", "Your Photo"],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -101,6 +104,7 @@ export default function Wardrobe() {
       {tab === "closet" && <Closet />}
       {tab === "build" && <Builder />}
       {tab === "saved" && <SavedOutfits />}
+      {tab === "me" && <ModelPhoto />}
     </div>
   );
 }
@@ -226,7 +230,7 @@ function Closet() {
             className="group relative bg-white/5 border border-white/10 rounded-xl overflow-hidden"
           >
             <img
-              src={item.imageUrl}
+              src={item.cleanImageUrl ?? item.imageUrl}
               alt={item.name}
               className="w-full aspect-square object-cover"
               loading="lazy"
@@ -422,7 +426,7 @@ function Builder() {
                 }`}
               >
                 <img
-                  src={item.imageUrl}
+                  src={item.cleanImageUrl ?? item.imageUrl}
                   alt={item.name}
                   className="w-full aspect-square object-cover"
                 />
@@ -477,6 +481,23 @@ function SavedOutfits() {
   const deleteMutation = trpc.wardrobe.deleteOutfit.useMutation({
     onSuccess: () => utils.wardrobe.listOutfits.invalidate(),
   });
+
+  const modelQuery = trpc.wardrobe.model.get.useQuery();
+  const [renderingId, setRenderingId] = useState<number | null>(null);
+
+  const renderMutation = trpc.wardrobe.renderOutfit.useMutation({
+    onSuccess: () => {
+      toast.success("Here's how it looks");
+      utils.wardrobe.listOutfits.invalidate();
+    },
+    onError: err => toast.error(err.message.slice(0, 160)),
+    onSettled: () => setRenderingId(null),
+  });
+
+  const seeItOn = (outfitId: number, style: "mannequin" | "personal") => {
+    setRenderingId(outfitId);
+    renderMutation.mutate({ outfitId, style });
+  };
 
   if (outfitsQuery.isLoading) {
     return (
@@ -554,22 +575,201 @@ function SavedOutfits() {
               </button>
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            {outfit.items.map(item => (
+          <div className="flex flex-col sm:flex-row gap-4">
+            {outfit.renderImageUrl && (
               <img
-                key={item.id}
-                src={item.imageUrl}
-                alt={item.name}
-                title={item.name}
-                className="w-14 h-14 rounded-lg object-cover border border-white/10"
+                src={outfit.renderImageUrl}
+                alt={`${outfit.name} worn`}
+                className="w-full sm:w-40 rounded-xl object-cover border border-white/10 shrink-0"
               />
-            ))}
+            )}
+            <div className="flex-1">
+              <div className="flex gap-2 flex-wrap">
+                {outfit.items.map(item => (
+                  <img
+                    key={item.id}
+                    src={item.imageUrl}
+                    alt={item.name}
+                    title={item.name}
+                    className="w-14 h-14 rounded-lg object-cover border border-white/10"
+                  />
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <span className="text-[11px] uppercase tracking-wide text-white/35">
+                  {outfit.renderImageUrl ? "Try again on" : "See it on"}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={renderingId === outfit.id}
+                  onClick={() => seeItOn(outfit.id, "mannequin")}
+                  className="h-7 px-2.5 text-xs border-white/20 text-white hover:bg-white/10"
+                >
+                  {renderingId === outfit.id ? (
+                    <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
+                  ) : (
+                    <Shapes className="w-3 h-3 mr-1.5" />
+                  )}
+                  A mannequin
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={renderingId === outfit.id}
+                  onClick={() => seeItOn(outfit.id, "personal")}
+                  title={
+                    modelQuery.data
+                      ? "Render this on your photo"
+                      : "Add a photo of yourself on the Your Photo tab first"
+                  }
+                  className="h-7 px-2.5 text-xs border-white/20 text-white hover:bg-white/10"
+                >
+                  <UserRound className="w-3 h-3 mr-1.5" />
+                  {modelQuery.data ? "You" : "You (add a photo)"}
+                </Button>
+              </div>
+            </div>
           </div>
           {outfit.aiRationale && (
             <p className="text-sm text-white/60 mt-3">{outfit.aiRationale}</p>
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── The user's own photo, used to render outfits on them ─────────────────────
+function ModelPhoto() {
+  const utils = trpc.useUtils();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const modelQuery = trpc.wardrobe.model.get.useQuery();
+
+  const uploadMutation = trpc.wardrobe.model.upload.useMutation({
+    onSuccess: () => {
+      toast.success("Photo saved — you can now see outfits on you");
+      utils.wardrobe.model.get.invalidate();
+    },
+    onError: err => toast.error(err.message.slice(0, 160)),
+  });
+
+  const deleteMutation = trpc.wardrobe.model.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Photo removed");
+      setConfirmed(false);
+      utils.wardrobe.model.get.invalidate();
+    },
+  });
+
+  const handleFile = (file: File | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image");
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      toast.error(`That photo is over ${MAX_IMAGE_MB}MB`);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () =>
+      uploadMutation.mutate({
+        fileBase64: (reader.result as string).split(",")[1] ?? "",
+        mimeType: file.type,
+        isPhotoOfMe: true,
+      });
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="max-w-xl">
+      <h2 className="font-bold mb-1">Your photo</h2>
+      <p className="text-white/50 text-sm mb-5">
+        Add one full-length photo of yourself and the stylist can show outfits
+        on you instead of a mannequin. Only you can see it, and you can remove
+        it at any time.
+      </p>
+
+      {modelQuery.data ? (
+        <div className="flex items-start gap-4">
+          <img
+            src={modelQuery.data.imageUrl}
+            alt="Your photo"
+            className="w-40 rounded-xl border border-white/10 object-cover"
+          />
+          <div>
+            <p className="text-sm text-white/70 mb-3">
+              Outfits can now be rendered on you from the Saved Outfits tab.
+            </p>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => fileRef.current?.click()}
+                className="border-white/20 text-white hover:bg-white/10"
+              >
+                Replace
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+                className="border-white/20 text-white/70 hover:bg-white/10 hover:text-red-400"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Remove
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <label className="flex items-start gap-2.5 text-sm text-white/70 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={e => setConfirmed(e.target.checked)}
+              className="mt-1 accent-fuchsia-500"
+            />
+            <span>
+              This is a photo of me. I understand it will be used to generate
+              pictures of me wearing these clothes.
+            </span>
+          </label>
+
+          <Button
+            onClick={() => fileRef.current?.click()}
+            disabled={!confirmed || uploadMutation.isPending}
+            className="bg-gradient-to-r from-fuchsia-500 to-violet-600 border-0"
+          >
+            {uploadMutation.isPending ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Uploading…
+              </>
+            ) : (
+              <>
+                <UserRound className="w-4 h-4 mr-2" /> Choose photo
+              </>
+            )}
+          </Button>
+
+          <p className="text-xs text-white/35">
+            Please only upload a photo of yourself — not of anyone else.
+          </p>
+        </div>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={e => handleFile(e.target.files?.[0])}
+      />
     </div>
   );
 }

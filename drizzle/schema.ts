@@ -332,6 +332,10 @@ export const wardrobeItems = mysqlTable("wardrobe_items", {
   userId: int("userId").notNull(),
   imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
   imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  // A generated version of the photo on a clean studio backdrop. Null when
+  // generation failed or has not run — always fall back to imageUrl.
+  cleanImageUrl: varchar("cleanImageUrl", { length: 512 }),
+  cleanImageKey: varchar("cleanImageKey", { length: 512 }),
   name: varchar("name", { length: 160 }).notNull(),
   slot: mysqlEnum("slot", [
     "top",
@@ -360,6 +364,10 @@ export const wardrobeOutfits = mysqlTable("wardrobe_outfits", {
   aiRationale: text("aiRationale"),
   aiScore: int("aiScore"),
   source: mysqlEnum("source", ["ai", "manual"]).default("manual").notNull(),
+  // A generated image of the outfit being worn.
+  renderImageUrl: varchar("renderImageUrl", { length: 512 }),
+  renderImageKey: varchar("renderImageKey", { length: 512 }),
+  renderStyle: mysqlEnum("renderStyle", ["mannequin", "personal"]),
   // Set once this outfit has been published into the competition feed.
   postedPostId: int("postedPostId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -367,3 +375,19 @@ export const wardrobeOutfits = mysqlTable("wardrobe_outfits", {
 
 export type WardrobeOutfit = typeof wardrobeOutfits.$inferSelect;
 export type InsertWardrobeOutfit = typeof wardrobeOutfits.$inferInsert;
+
+// ─── Wardrobe — the user's own photo, used to render outfits on them ─────────
+// One per user. `consentedAt` records that they confirmed the photo is of
+// themselves; without it no personal render is produced.
+export const wardrobeModels = mysqlTable("wardrobe_models", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  consentedAt: timestamp("consentedAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WardrobeModel = typeof wardrobeModels.$inferSelect;
+export type InsertWardrobeModel = typeof wardrobeModels.$inferInsert;

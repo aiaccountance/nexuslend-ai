@@ -2,6 +2,8 @@ import { eq, and, desc, inArray } from "drizzle-orm";
 import {
   wardrobeItems,
   wardrobeOutfits,
+  wardrobeModels,
+  InsertWardrobeModel,
   InsertWardrobeItem,
   InsertWardrobeOutfit,
   outfitComments,
@@ -182,4 +184,71 @@ export async function countComments(postIds: number[]) {
     counts.set(row.postId, (counts.get(row.postId) ?? 0) + 1);
   }
   return counts;
+}
+
+// ─── Generated imagery ────────────────────────────────────────────────────────
+export async function setItemCleanShot(
+  id: number,
+  cleanImageUrl: string,
+  cleanImageKey: string
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(wardrobeItems)
+    .set({ cleanImageUrl, cleanImageKey })
+    .where(eq(wardrobeItems.id, id));
+}
+
+export async function setOutfitRender(
+  id: number,
+  userId: number,
+  renderImageUrl: string,
+  renderImageKey: string,
+  renderStyle: "mannequin" | "personal"
+) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(wardrobeOutfits)
+    .set({ renderImageUrl, renderImageKey, renderStyle })
+    .where(and(eq(wardrobeOutfits.id, id), eq(wardrobeOutfits.userId, userId)));
+}
+
+// ─── The user's own model photo ───────────────────────────────────────────────
+export async function getWardrobeModel(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(wardrobeModels)
+    .where(eq(wardrobeModels.userId, userId))
+    .limit(1);
+  return rows[0];
+}
+
+/** One photo per user — a second upload replaces the first. */
+export async function upsertWardrobeModel(model: InsertWardrobeModel) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getWardrobeModel(model.userId);
+  if (existing) {
+    await db
+      .update(wardrobeModels)
+      .set({
+        imageUrl: model.imageUrl,
+        imageKey: model.imageKey,
+        consentedAt: model.consentedAt,
+      })
+      .where(eq(wardrobeModels.id, existing.id));
+    return existing.id;
+  }
+  const [result] = await db.insert(wardrobeModels).values(model);
+  return (result as { insertId?: number })?.insertId;
+}
+
+export async function deleteWardrobeModel(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(wardrobeModels).where(eq(wardrobeModels.userId, userId));
 }

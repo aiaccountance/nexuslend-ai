@@ -29,6 +29,12 @@ vi.mock("./_core/llm", () => ({
   }),
 }));
 
+vi.mock("./_core/imageGeneration", () => ({
+  generateImage: vi
+    .fn()
+    .mockResolvedValue({ url: "/manus-storage/generated/mock.png" }),
+}));
+
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 import type { User } from "../drizzle/schema";
@@ -37,12 +43,14 @@ import { getDb } from "./db";
 import {
   wardrobeItems,
   wardrobeOutfits,
+  wardrobeModels,
   outfitComments,
   outfitPosts,
   outfitRatings,
   outfitMatchups,
 } from "../drizzle/schema";
 import { invokeLLM } from "./_core/llm";
+import { generateImage } from "./_core/imageGeneration";
 
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -77,6 +85,7 @@ beforeAll(async () => {
   if (!conn) return;
   try {
     await conn.delete(wardrobeOutfits);
+    await conn.delete(wardrobeModels);
     await conn.delete(wardrobeItems);
     await conn.delete(outfitComments);
     await conn.delete(outfitRatings);
@@ -383,8 +392,10 @@ describe("wardrobe.postToFeed", () => {
     // Carries the stylist's verdict across to the feed
     expect(post!.post.aiStyleScore).toBe(77);
     expect(post!.post.aiFeedback).toBe("Balanced proportions.");
-    // Cover image comes from a real garment
-    expect(post!.post.imageUrl).toContain("/manus-storage/wardrobe/");
+    // With no render yet, the cover falls back to the garment's tidied shot
+    // rather than the user's raw phone photo.
+    const cover = post!.post.imageUrl;
+    expect(cover).toContain("/manus-storage/generated/");
   });
 
   dbIt("refuses to publish the same outfit twice", async () => {
@@ -552,5 +563,249 @@ describe("outfits.outfitOfTheWeek", () => {
     expect(crown!.post.id).toBe(miaPost.postId);
     expect(crown!.post.battleWins).toBeGreaterThan(0);
     expect(crown!.authorName).toBe("Mia");
+  });
+});
+
+describe("garment clean-up shots", () => {
+  dbIt(
+    "stores a tidied product shot alongside the original photo",
+    async () => {
+      vi.mocked(generateImage).mockResolvedValueOnce({
+        url: "/manus-storage/generated/clean-1.png",
+      });
+      mockLlmJson({
+        name: "linen shirt",
+        slot: "top",
+        colour: "white",
+        tags: [],
+      });
+
+      const res = await appRouter.createCaller(ctxFor(mia)).wardrobe.addItem({
+        fileBase64: TINY_PNG_BASE64,
+        mimeType: "image/png",
+      });
+
+      // The user's original upload is never discarded.
+      expect(res.item?.imageUrl).toContain("/manus-storage/wardrobe/");
+      expect(res.item?.cleanImageUrl).toBe(
+        "/manus-storage/generated/clean-1.png"
+      );
+      expect(res.item?.cleanImageKey).toBe("generated/clean-1.png");
+    }
+  );
+
+  dbIt("keeps the item when the image service fails", async () => {
+    vi.mocked(generateImage).mockRejectedValueOnce(new Error("image svc down"));
+    mockLlmJson({
+      name: "denim jacket",
+      slot: "outerwear",
+      colour: "blue",
+      tags: [],
+    });
+
+    const res = await appRouter.createCaller(ctxFor(mia)).wardrobe.addItem({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.item?.name).toBe("denim jacket");
+    expect(res.item?.cleanImageUrl).toBeNull();
+  });
+
+  dbIt("shows the tidied shot in suggestions when there is one", async () => {
+    const { top, bottom } = await seedWardrobe(noah);
+    mockLlmJson({
+      outfits: [
+        { name: "Clean look", item_ids: [top.id, bottom.id], score: 75 },
+      ],
+    });
+    const res = await appRouter
+      .createCaller(ctxFor(noah))
+      .wardrobe.suggestOutfits({ count: 1 });
+
+    // seedWardrobe runs through addItem, so each garment has a mocked clean shot.
+    expect(res.suggestions[0].items[0].imageUrl).toContain(
+      "/manus-storage/generated/"
+    );
+  });
+});
+
+describe("wardrobe.renderOutfit", () => {
+  async function savedOutfit(user: User) {
+    const { top, bottom } = await seedWardrobe(user);
+    const res = await appRouter.createCaller(ctxFor(user)).wardrobe.saveOutfit({
+      name: "Render me",
+      itemIds: [top.id, bottom.id],
+      occasion: "brunch",
+    });
+    return res.id!;
+  }
+
+  dbIt("renders the outfit on a mannequin by default", async () => {
+    const id = await savedOutfit(mia);
+    vi.mocked(generateImage).mockResolvedValueOnce({
+      url: "/manus-storage/generated/render-1.png",
+    });
+
+    const res = await appRouter
+      .createCaller(ctxFor(mia))
+      .wardrobe.renderOutfit({ outfitId: id });
+
+    expect(res.style).toBe("mannequin");
+    expect(res.renderImageUrl).toBe("/manus-storage/generated/render-1.png");
+
+    const outfits = await appRouter
+      .createCaller(ctxFor(mia))
+      .wardrobe.listOutfits();
+    const saved = outfits.find(o => o.id === id);
+    expect(saved!.renderImageUrl).toBe("/manus-storage/generated/render-1.png");
+    expect(saved!.renderStyle).toBe("mannequin");
+  });
+
+  dbIt(
+    "refuses a personal render before a photo has been supplied",
+    async () => {
+      const id = await savedOutfit(mia);
+      await expect(
+        appRouter
+          .createCaller(ctxFor(mia))
+          .wardrobe.renderOutfit({ outfitId: id, style: "personal" })
+      ).rejects.toThrow(/photo of yourself/i);
+    }
+  );
+
+  dbIt("renders on the user's own photo once they have added one", async () => {
+    const caller = appRouter.createCaller(ctxFor(mia));
+    await caller.wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+    const id = await savedOutfit(mia);
+    vi.mocked(generateImage).mockResolvedValueOnce({
+      url: "/manus-storage/generated/render-personal.png",
+    });
+
+    const res = await caller.wardrobe.renderOutfit({
+      outfitId: id,
+      style: "personal",
+    });
+    expect(res.style).toBe("personal");
+
+    // The person's photo is passed first so the model renders them, not a stranger.
+    const call = vi.mocked(generateImage).mock.calls.at(-1)![0];
+    expect(call.originalImages![0].url).toContain(
+      "/manus-storage/wardrobe-model/"
+    );
+    expect(call.prompt).toMatch(/same person/i);
+  });
+
+  dbIt("refuses to render someone else's outfit", async () => {
+    const id = await savedOutfit(mia);
+    await expect(
+      appRouter
+        .createCaller(ctxFor(noah))
+        .wardrobe.renderOutfit({ outfitId: id })
+    ).rejects.toThrow(/not yours/i);
+  });
+
+  dbIt(
+    "reports a clear error when the image service is unavailable",
+    async () => {
+      const id = await savedOutfit(mia);
+      vi.mocked(generateImage).mockRejectedValueOnce(
+        new Error("image svc down")
+      );
+      await expect(
+        appRouter
+          .createCaller(ctxFor(mia))
+          .wardrobe.renderOutfit({ outfitId: id })
+      ).rejects.toThrow(/try again/i);
+    }
+  );
+
+  dbIt("uses the render as the feed cover once one exists", async () => {
+    const id = await savedOutfit(mia);
+    vi.mocked(generateImage).mockResolvedValueOnce({
+      url: "/manus-storage/generated/cover.png",
+    });
+    const caller = appRouter.createCaller(ctxFor(mia));
+    await caller.wardrobe.renderOutfit({ outfitId: id });
+
+    const { postId } = await caller.wardrobe.postToFeed({ outfitId: id });
+    const post = await appRouter
+      .createCaller(ctxFor(null))
+      .outfits.getPost({ id: postId! });
+    expect(post!.post.imageUrl).toBe("/manus-storage/generated/cover.png");
+  });
+});
+
+describe("wardrobe.model", () => {
+  dbIt("stores the photo with a consent timestamp", async () => {
+    const caller = appRouter.createCaller(ctxFor(noah));
+    await caller.wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+
+    const model = await caller.wardrobe.model.get();
+    expect(model).not.toBeNull();
+    expect(model!.imageUrl).toContain("/manus-storage/wardrobe-model/");
+    expect(model!.consentedAt).toBeInstanceOf(Date);
+  });
+
+  dbIt("rejects an upload without the confirmation", async () => {
+    await expect(
+      appRouter.createCaller(ctxFor(noah)).wardrobe.model.upload({
+        fileBase64: TINY_PNG_BASE64,
+        mimeType: "image/png",
+        isPhotoOfMe: false as never,
+      })
+    ).rejects.toThrow();
+  });
+
+  dbIt("replaces rather than duplicates on a second upload", async () => {
+    const caller = appRouter.createCaller(ctxFor(noah));
+    await caller.wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+    await caller.wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+
+    const conn = await getDb();
+    const rows = await conn!.select().from(wardrobeModels);
+    expect(rows.filter(r => r.userId === noah.id)).toHaveLength(1);
+  });
+
+  dbIt("lets the user remove their photo", async () => {
+    const caller = appRouter.createCaller(ctxFor(noah));
+    await caller.wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+    await caller.wardrobe.model.delete();
+    expect(await caller.wardrobe.model.get()).toBeNull();
+  });
+
+  dbIt("keeps each user's photo private to them", async () => {
+    await appRouter.createCaller(ctxFor(mia)).wardrobe.model.upload({
+      fileBase64: TINY_PNG_BASE64,
+      mimeType: "image/png",
+      isPhotoOfMe: true,
+    });
+    await appRouter.createCaller(ctxFor(noah)).wardrobe.model.delete();
+
+    // Deleting Noah's photo must not touch Mia's.
+    expect(
+      await appRouter.createCaller(ctxFor(mia)).wardrobe.model.get()
+    ).not.toBeNull();
   });
 });

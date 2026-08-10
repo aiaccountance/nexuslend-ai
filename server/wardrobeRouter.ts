@@ -5,6 +5,10 @@ import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
 import * as wardrobeDb from "./wardrobeDb";
 import * as outfitsDb from "./outfitsDb";
+import {
+  generateCleanGarmentShot,
+  generateOutfitRender,
+} from "./wardrobeImages";
 
 const SLOT_ENUM = z.enum([
   "top",
@@ -38,6 +42,11 @@ function asStringArray(value: unknown): string[] {
     }
   }
   return [];
+}
+
+/** storagePut and generateImage both return /manus-storage/<key> paths. */
+function keyFromStorageUrl(url: string): string {
+  return url.replace(/^\/manus-storage\//, "");
 }
 
 function asNumberArray(value: unknown): number[] {
@@ -258,6 +267,23 @@ export const wardrobeRouter = router({
       });
 
       const insertId = (result as { insertId?: number })?.insertId;
+
+      // Restage the raw photo as a clean product shot. Best-effort: the item
+      // is already saved and the original photo stays as the fallback.
+      if (insertId) {
+        const clean = await generateCleanGarmentShot(
+          input.fileBase64,
+          input.mimeType
+        );
+        if (clean) {
+          await wardrobeDb.setItemCleanShot(
+            insertId,
+            clean.url,
+            keyFromStorageUrl(clean.url)
+          );
+        }
+      }
+
       const item = insertId
         ? await wardrobeDb.getWardrobeItem(insertId)
         : undefined;
@@ -366,7 +392,7 @@ export const wardrobeRouter = router({
               id: i.id,
               name: i.name,
               slot: i.slot,
-              imageUrl: i.imageUrl,
+              imageUrl: i.cleanImageUrl ?? i.imageUrl,
             })),
         })),
         reason:
@@ -430,7 +456,7 @@ export const wardrobeRouter = router({
           id: i.id,
           name: i.name,
           slot: i.slot,
-          imageUrl: i.imageUrl,
+          imageUrl: i.cleanImageUrl ?? i.imageUrl,
         })),
     }));
   }),
@@ -486,11 +512,16 @@ export const wardrobeRouter = router({
         });
       }
 
-      // Prefer a full-look garment for the cover image.
+      // Cover image, best first: a render of the whole outfit being worn, then
+      // the tidied shot of the most representative garment, then its raw photo.
       const coverOrder = ["dress", "top", "outerwear", "bottom", "shoes"];
       const cover =
         coverOrder.map(s => items.find(i => i.slot === s)).find(Boolean) ??
         items[0];
+      const coverUrl =
+        outfit.renderImageUrl ?? cover.cleanImageUrl ?? cover.imageUrl;
+      const coverKey =
+        outfit.renderImageKey ?? cover.cleanImageKey ?? cover.imageKey;
 
       const caption = [outfit.name, outfit.occasion]
         .filter(Boolean)
@@ -499,8 +530,8 @@ export const wardrobeRouter = router({
 
       const result = await outfitsDb.createOutfitPost({
         userId: ctx.user.id,
-        imageUrl: cover.imageUrl,
-        imageKey: cover.imageKey,
+        imageUrl: coverUrl,
+        imageKey: coverKey,
         caption,
         category: input.category,
         aiTags: items.map(i => i.name).slice(0, 6),
@@ -516,6 +547,128 @@ export const wardrobeRouter = router({
       }
       return { success: true, postId };
     }),
+
+  // ── Seeing an outfit worn ────────────────────────────────────────────────
+  /**
+   * Generates a picture of a saved outfit being worn. Defaults to a faceless
+   * mannequin; "personal" uses the user's own photo and is refused unless they
+   * have uploaded one and confirmed it is of them.
+   */
+  renderOutfit: protectedProcedure
+    .input(
+      z.object({
+        outfitId: z.number(),
+        style: z.enum(["mannequin", "personal"]).default("mannequin"),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const outfit = await enforcingRules(() =>
+        wardrobeDb.requireOwnedOutfit(input.outfitId, ctx.user.id)
+      );
+
+      const items = await wardrobeDb.getWardrobeItemsByIds(
+        ctx.user.id,
+        asNumberArray(outfit.itemIds)
+      );
+      if (items.length === 0) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "That outfit has no items left to show",
+        });
+      }
+
+      let modelImageUrl: string | null = null;
+      if (input.style === "personal") {
+        const model = await wardrobeDb.getWardrobeModel(ctx.user.id);
+        if (!model) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message:
+              "Add a photo of yourself first, then you can see outfits on you",
+          });
+        }
+        modelImageUrl = model.imageUrl;
+      }
+
+      const render = await generateOutfitRender({
+        items: items.map(i => ({
+          name: i.name,
+          slot: i.slot,
+          colour: i.colour,
+          imageUrl: i.imageUrl,
+          cleanImageUrl: i.cleanImageUrl,
+        })),
+        style: input.style,
+        occasion: outfit.occasion,
+        modelImageUrl,
+      });
+
+      if (!render) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message:
+            "Couldn't generate that look right now — please try again shortly",
+        });
+      }
+
+      await wardrobeDb.setOutfitRender(
+        outfit.id,
+        ctx.user.id,
+        render.url,
+        keyFromStorageUrl(render.url),
+        input.style
+      );
+
+      return { success: true, renderImageUrl: render.url, style: input.style };
+    }),
+
+  // ── The user's own photo ─────────────────────────────────────────────────
+  model: router({
+    get: protectedProcedure.query(async ({ ctx }) => {
+      const model = await wardrobeDb.getWardrobeModel(ctx.user.id);
+      return model
+        ? { imageUrl: model.imageUrl, consentedAt: model.consentedAt }
+        : null;
+    }),
+
+    upload: protectedProcedure
+      .input(
+        z.object({
+          fileBase64: z.string().min(1).max(17_000_000),
+          mimeType: z.string().startsWith("image/"),
+          /**
+           * Must be true. The photo is used to generate pictures of this person
+           * wearing clothes, so we only accept it on an explicit confirmation
+           * that it is the account holder themselves.
+           */
+          isPhotoOfMe: z.literal(true),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const buffer = Buffer.from(input.fileBase64, "base64");
+        const ext = input.mimeType.split("/")[1] || "jpg";
+        const key = `wardrobe-model/${ctx.user.id}-${Date.now()}.${ext}`;
+        const { url, key: storedKey } = await storagePut(
+          key,
+          buffer,
+          input.mimeType
+        );
+
+        await wardrobeDb.upsertWardrobeModel({
+          userId: ctx.user.id,
+          imageUrl: url,
+          imageKey: storedKey,
+          consentedAt: new Date(),
+        });
+
+        return { success: true, imageUrl: url };
+      }),
+
+    delete: protectedProcedure.mutation(async ({ ctx }) => {
+      await wardrobeDb.deleteWardrobeModel(ctx.user.id);
+      return { success: true };
+    }),
+  }),
 
   // ── Comments on feed posts ───────────────────────────────────────────────
   comments: router({
