@@ -5,7 +5,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { StarRating } from "./StarRating";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Sparkles, ImageOff } from "lucide-react";
+import { Loader2, Sparkles, ImageOff, Crown } from "lucide-react";
+import { Comments } from "./Comments";
 import { toast } from "sonner";
 
 const SORTS = [
@@ -89,6 +90,8 @@ export default function Feed() {
           </select>
         </div>
       </div>
+
+      <OutfitOfTheWeek />
 
       {feedQuery.isLoading && (
         <div className="flex items-center justify-center py-24 text-white/40">
@@ -174,6 +177,7 @@ export default function Feed() {
                   )}
                 </details>
               )}
+              <Comments postId={post.id} />
               <div className="flex items-center justify-between pt-1">
                 <StarRating
                   value={avgRating}
@@ -202,5 +206,41 @@ export default function Feed() {
         </p>
       )}
     </div>
+  );
+}
+
+function OutfitOfTheWeek() {
+  const query = trpc.outfits.outfitOfTheWeek.useQuery();
+  const winner = query.data;
+  if (!winner) return null;
+
+  return (
+    <Link
+      href={`/outfits/u/${winner.post.userId}`}
+      className="flex items-center gap-4 mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-fuchsia-500/10 to-transparent border border-amber-400/25 hover:border-amber-400/50 transition-colors"
+    >
+      <img
+        src={winner.post.imageUrl}
+        alt={winner.post.caption || "Outfit of the week"}
+        className="w-16 h-16 rounded-xl object-cover shrink-0"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5 text-amber-300 text-[11px] font-bold uppercase tracking-wide">
+          <Crown className="w-3.5 h-3.5" /> Outfit of the Week
+        </div>
+        <p className="font-bold truncate">
+          {winner.post.caption || "Untitled look"}
+        </p>
+        <p className="text-xs text-white/50">
+          by {winner.authorName || "Anonymous"} · {winner.post.battleWins}{" "}
+          battle
+          {winner.post.battleWins === 1 ? " win" : " wins"}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <div className="font-black text-amber-300">{winner.post.eloRating}</div>
+        <div className="text-[10px] text-white/40">Elo</div>
+      </div>
+    </Link>
   );
 }

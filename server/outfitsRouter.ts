@@ -281,6 +281,11 @@ export const outfitsRouter = router({
       }),
   }),
 
+  outfitOfTheWeek: publicProcedure.query(async () => {
+    const row = await outfitsDb.outfitOfTheWeek();
+    return row ? withAvgRating(row) : null;
+  }),
+
   leaderboard: router({
     posts: publicProcedure
       .input(

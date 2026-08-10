@@ -314,6 +314,32 @@ function periodCutoff(period: LeaderboardPeriod): Date | null {
   return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * The single best-performing outfit of the last 7 days. Requires at least one
+ * battle win so a brand-new post can't take the crown at its default Elo.
+ */
+export async function outfitOfTheWeek() {
+  const db = await getDb();
+  if (!db) return undefined;
+  const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const rows = await db
+    .select({
+      post: outfitPosts,
+      authorName: users.name,
+    })
+    .from(outfitPosts)
+    .leftJoin(users, eq(users.id, outfitPosts.userId))
+    .where(
+      and(
+        sql`${outfitPosts.createdAt} >= ${cutoff}`,
+        sql`${outfitPosts.battleWins} > 0`
+      )
+    )
+    .orderBy(desc(outfitPosts.eloRating))
+    .limit(1);
+  return rows[0];
+}
+
 export async function leaderboardPosts(
   period: LeaderboardPeriod,
   limit: number

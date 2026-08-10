@@ -3,11 +3,20 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
-import { Shirt, Swords, Trophy, Upload, Home, LogOut } from "lucide-react";
+import {
+  Shirt,
+  Swords,
+  Trophy,
+  Upload,
+  Home,
+  LogOut,
+  Layers,
+} from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/outfits", label: "Feed", icon: Home },
   { href: "/outfits/upload", label: "Post Outfit", icon: Upload },
+  { href: "/outfits/wardrobe", label: "Wardrobe", icon: Layers },
   { href: "/outfits/battle", label: "Battle", icon: Swords },
   { href: "/outfits/leaderboard", label: "Leaderboard", icon: Trophy },
 ];

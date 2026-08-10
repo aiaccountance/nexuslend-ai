@@ -33,6 +33,7 @@ import OutfitUpload from "@/pages/outfits/Upload";
 import OutfitBattle from "@/pages/outfits/Battle";
 import OutfitLeaderboard from "@/pages/outfits/Leaderboard";
 import OutfitProfile from "@/pages/outfits/Profile";
+import OutfitWardrobe from "@/pages/outfits/Wardrobe";
 
 function DashboardRouter() {
   return (
@@ -66,6 +67,7 @@ function OutfitArenaRouter() {
       <Switch>
         <Route path="/outfits" component={OutfitFeed} />
         <Route path="/outfits/upload" component={OutfitUpload} />
+        <Route path="/outfits/wardrobe" component={OutfitWardrobe} />
         <Route path="/outfits/battle" component={OutfitBattle} />
         <Route path="/outfits/leaderboard" component={OutfitLeaderboard} />
         <Route path="/outfits/u/:userId">
