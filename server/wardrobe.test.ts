@@ -8,24 +8,13 @@ vi.mock("./storage", () => ({
 }));
 
 // Default mock classifies a garment; individual tests override per call.
-vi.mock("./_core/llm", () => ({
-  invokeLLM: vi.fn().mockResolvedValue({
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: "assistant",
-          content: JSON.stringify({
-            name: "cream oversized knit",
-            slot: "top",
-            colour: "cream",
-            tags: ["wool", "relaxed"],
-            notes: "Pairs well with straight-leg denim.",
-          }),
-        },
-        finish_reason: "stop",
-      },
-    ],
+vi.mock("./_core/claude", () => ({
+  claudeJson: vi.fn().mockResolvedValue({
+    name: "cream oversized knit",
+    slot: "top",
+    colour: "cream",
+    tags: ["wool", "relaxed"],
+    notes: "Pairs well with straight-leg denim.",
   }),
 }));
 
@@ -49,7 +38,7 @@ import {
   outfitRatings,
   outfitMatchups,
 } from "../drizzle/schema";
-import { invokeLLM } from "./_core/llm";
+import { claudeJson } from "./_core/claude";
 import { generateImage } from "./_core/imageGeneration";
 
 const TINY_PNG_BASE64 =
@@ -65,15 +54,7 @@ function ctxFor(user: User | null): TrpcContext {
 
 /** Queue a single JSON payload as the model's next reply. */
 function mockLlmJson(payload: unknown) {
-  vi.mocked(invokeLLM).mockResolvedValueOnce({
-    choices: [
-      {
-        index: 0,
-        message: { role: "assistant", content: JSON.stringify(payload) },
-        finish_reason: "stop",
-      },
-    ],
-  } as never);
+  vi.mocked(claudeJson).mockResolvedValueOnce(payload as never);
 }
 
 let mia: User;
@@ -188,7 +169,7 @@ describe("wardrobe.addItem", () => {
   );
 
   dbIt("still saves the item when the classifier is offline", async () => {
-    vi.mocked(invokeLLM).mockRejectedValueOnce(new Error("model offline"));
+    vi.mocked(claudeJson).mockRejectedValueOnce(new Error("model offline"));
     const res = await appRouter.createCaller(ctxFor(mia)).wardrobe.addItem({
       fileBase64: TINY_PNG_BASE64,
       mimeType: "image/png",
@@ -314,7 +295,7 @@ describe("wardrobe.suggestOutfits", () => {
 
   dbIt("degrades gracefully when the stylist is offline", async () => {
     await seedWardrobe(noah);
-    vi.mocked(invokeLLM).mockRejectedValueOnce(new Error("stylist offline"));
+    vi.mocked(claudeJson).mockRejectedValueOnce(new Error("stylist offline"));
 
     const res = await appRouter
       .createCaller(ctxFor(noah))

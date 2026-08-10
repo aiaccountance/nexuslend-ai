@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 
-// Mock storage + LLM so the tests exercise our own logic against a real database
-// rather than Manus infrastructure.
+// Mock storage + Claude so the tests exercise our own logic against a real
+// database rather than third-party infrastructure.
 vi.mock("./storage", () => ({
   storagePut: vi.fn().mockImplementation(async (key: string) => ({
     key,
@@ -9,24 +9,13 @@ vi.mock("./storage", () => ({
   })),
 }));
 
-vi.mock("./_core/llm", () => ({
-  invokeLLM: vi.fn().mockResolvedValue({
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: "assistant",
-          content: JSON.stringify({
-            tags: ["earth tones", "oversized blazer", "streetwear"],
-            style_score: 84,
-            occasion: "weekend brunch",
-            feedback: "Strong silhouette and a cohesive palette.",
-            suggestions: ["Swap the sneakers for loafers to dress it up"],
-          }),
-        },
-        finish_reason: "stop",
-      },
-    ],
+vi.mock("./_core/claude", () => ({
+  claudeJson: vi.fn().mockResolvedValue({
+    tags: ["earth tones", "oversized blazer", "streetwear"],
+    style_score: 84,
+    occasion: "weekend brunch",
+    feedback: "Strong silhouette and a cohesive palette.",
+    suggestions: ["Swap the sneakers for loafers to dress it up"],
   }),
 }));
 
@@ -155,8 +144,8 @@ describe("outfits.upload", () => {
   dbIt(
     "still saves the outfit when the AI stylist is unavailable",
     async () => {
-      const { invokeLLM } = await import("./_core/llm");
-      vi.mocked(invokeLLM).mockRejectedValueOnce(new Error("stylist offline"));
+      const { claudeJson } = await import("./_core/claude");
+      vi.mocked(claudeJson).mockRejectedValueOnce(new Error("stylist offline"));
 
       const res = await post(alice, "casual", "posted during an outage");
 
@@ -170,17 +159,13 @@ describe("outfits.upload", () => {
   );
 
   dbIt(
-    "degrades gracefully when the model returns unparseable output",
+    "degrades gracefully when the model omits the fields we asked for",
     async () => {
-      const { invokeLLM } = await import("./_core/llm");
-      vi.mocked(invokeLLM).mockResolvedValueOnce({
-        choices: [
-          {
-            index: 0,
-            message: { role: "assistant", content: "not json" },
-            finish_reason: "stop",
-          },
-        ],
+      // Structured outputs make this rare, but a truncated or off-shape reply
+      // must not write junk scores and tags into the leaderboard.
+      const { claudeJson } = await import("./_core/claude");
+      vi.mocked(claudeJson).mockResolvedValueOnce({
+        feedback: "nice fit",
       } as never);
 
       const res = await post(alice, "casual", "garbled response");

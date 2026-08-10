@@ -8,6 +8,12 @@
  * occasionally fails, and none of it is essential to the underlying record —
  * a garment without a clean shot still shows its original photo. So failures
  * return null and the caller carries on.
+ *
+ * NOTE: this is the one part of Outfit Arena that does not run on Claude.
+ * Claude reads images but cannot draw them, so the prompts below go to a
+ * separate image-generation service (`_core/imageGeneration`). Swapping in a
+ * different provider means changing that module and nothing else — the prompts
+ * and the calling code here are provider-agnostic.
  */
 import { generateImage } from "./_core/imageGeneration";
 

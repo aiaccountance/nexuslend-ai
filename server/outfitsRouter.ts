@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { invokeLLM } from "./_core/llm";
+import { claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as outfitsDb from "./outfitsDb";
 
@@ -19,17 +19,28 @@ const PERIOD_ENUM = z.enum(["day", "week", "all"]);
 const OUTFIT_STYLIST_SYSTEM_PROMPT = `
 You are an expert fashion stylist judging an outfit photo for "Outfit Arena", a Pinterest-style outfit rating and competition app.
 
-Look at the photo and return ONLY valid JSON (no markdown) with this exact shape:
-{
-  "tags": ["3 to 6 short style/color/garment tags, e.g. 'earth tones', 'oversized blazer', 'streetwear'"],
-  "style_score": 0-100 integer, overall styling quality,
-  "occasion": "one short phrase for the best-fit occasion, e.g. 'weekend brunch' or 'night out'",
-  "feedback": "2-3 sentence encouraging critique of what works and what doesn't",
-  "suggestions": ["2-3 short, specific styling suggestions to elevate the look, e.g. 'swap the sneakers for loafers to dress it up'"]
-}
+Fill in every field:
+- tags: 3 to 6 short style, colour or garment tags, e.g. "earth tones", "oversized blazer", "streetwear".
+- style_score: 0-100, overall styling quality.
+- occasion: one short phrase for the best-fit occasion, e.g. "weekend brunch" or "night out".
+- feedback: 2-3 sentences on what works and what doesn't.
+- suggestions: 2-3 short, specific ways to elevate the look, e.g. "swap the sneakers for loafers to dress it up".
 
-Be specific about colors, silhouette, and fit. Be encouraging but honest. If the image does not clearly show an outfit, still do your best to describe what is visible.
+Be specific about colours, silhouette and fit. Be encouraging but honest. If the image does not clearly show an outfit, still do your best with what is visible.
 `.trim();
+
+const OUTFIT_ANALYSIS_SCHEMA = {
+  type: "object",
+  properties: {
+    tags: { type: "array", items: { type: "string" }, maxItems: 6 },
+    style_score: { type: "integer", minimum: 0, maximum: 100 },
+    occasion: { type: "string" },
+    feedback: { type: "string" },
+    suggestions: { type: "array", items: { type: "string" }, maxItems: 4 },
+  },
+  required: ["tags", "style_score", "occasion", "feedback", "suggestions"],
+  additionalProperties: false,
+} as const;
 
 type AiOutfitAnalysis = {
   tags: string[];
@@ -63,48 +74,30 @@ async function analyseOutfitImage(dataUri: string): Promise<AiOutfitAnalysis> {
 async function requestOutfitAnalysis(
   dataUri: string
 ): Promise<AiOutfitAnalysis> {
-  const result = await invokeLLM({
-    messages: [
-      { role: "system", content: OUTFIT_STYLIST_SYSTEM_PROMPT },
-      {
-        role: "user",
-        content: [
-          {
-            type: "text",
-            text: "Analyse this outfit photo and return the JSON described in the system prompt.",
-          },
-          { type: "image_url", image_url: { url: dataUri, detail: "high" } },
-        ],
-      },
-    ],
-    max_tokens: 1024,
-    response_format: { type: "json_object" },
+  // The critique is the whole point of the upload, so this call thinks.
+  const parsed = await claudeJson<Partial<AiOutfitAnalysis>>({
+    system: OUTFIT_STYLIST_SYSTEM_PROMPT,
+    text: "Analyse this outfit photo.",
+    images: [dataUri],
+    schema: OUTFIT_ANALYSIS_SCHEMA,
+    maxTokens: 4096,
+    effort: "medium",
+    thinking: true,
   });
 
-  const rawContent = result.choices[0]?.message?.content;
-  const textContent = typeof rawContent === "string" ? rawContent : "";
-  const jsonMatch = textContent.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) return UNAVAILABLE_ANALYSIS;
-  try {
-    const parsed = JSON.parse(jsonMatch[0]) as Partial<AiOutfitAnalysis>;
-    return {
-      tags: Array.isArray(parsed.tags)
-        ? parsed.tags.slice(0, 6).map(String)
-        : [],
-      style_score:
-        typeof parsed.style_score === "number"
-          ? Math.max(0, Math.min(100, Math.round(parsed.style_score)))
-          : 50,
-      occasion:
-        typeof parsed.occasion === "string" ? parsed.occasion : "everyday",
-      feedback: typeof parsed.feedback === "string" ? parsed.feedback : "",
-      suggestions: Array.isArray(parsed.suggestions)
-        ? parsed.suggestions.slice(0, 4).map(String)
-        : [],
-    };
-  } catch {
-    return UNAVAILABLE_ANALYSIS;
-  }
+  return {
+    tags: Array.isArray(parsed.tags) ? parsed.tags.slice(0, 6).map(String) : [],
+    style_score:
+      typeof parsed.style_score === "number"
+        ? Math.max(0, Math.min(100, Math.round(parsed.style_score)))
+        : 50,
+    occasion:
+      typeof parsed.occasion === "string" ? parsed.occasion : "everyday",
+    feedback: typeof parsed.feedback === "string" ? parsed.feedback : "",
+    suggestions: Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.slice(0, 4).map(String)
+      : [],
+  };
 }
 
 /**

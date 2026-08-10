@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { invokeLLM } from "./_core/llm";
+import { claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as wardrobeDb from "./wardrobeDb";
 import * as outfitsDb from "./outfitsDb";
@@ -68,17 +68,29 @@ function asNumberArray(value: unknown): number[] {
 const GARMENT_SYSTEM_PROMPT = `
 You are a fashion cataloguer adding a single clothing item to a user's digital wardrobe.
 
-Look at the photo of ONE garment or accessory and return ONLY valid JSON (no markdown):
-{
-  "name": "short human name for the item, e.g. 'cream oversized knit'",
-  "slot": one of "top" | "bottom" | "outerwear" | "shoes" | "accessory" | "dress",
-  "colour": "dominant colour in plain words, e.g. 'cream' or 'navy'",
-  "tags": ["2 to 5 short descriptors: fabric, pattern, fit, formality"],
-  "notes": "one sentence on what this pairs well with"
-}
-
-Pick the single best slot. A full-length one-piece is "dress". Bags, hats, belts, jewellery and scarves are "accessory".
+Look at the photo of ONE garment or accessory and describe it:
+- name: short human name for the item, e.g. "cream oversized knit".
+- slot: the single best fit. A full-length one-piece is "dress". Bags, hats, belts, jewellery and scarves are "accessory".
+- colour: dominant colour in plain words, e.g. "cream" or "navy".
+- tags: 2 to 5 short descriptors covering fabric, pattern, fit and formality.
+- notes: one sentence on what this pairs well with.
 `.trim();
+
+const GARMENT_SCHEMA = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    slot: {
+      type: "string",
+      enum: ["top", "bottom", "outerwear", "shoes", "accessory", "dress"],
+    },
+    colour: { type: "string" },
+    tags: { type: "array", items: { type: "string" }, maxItems: 5 },
+    notes: { type: "string" },
+  },
+  required: ["name", "slot", "colour", "tags", "notes"],
+  additionalProperties: false,
+} as const;
 
 type GarmentAnalysis = {
   name: string;
@@ -101,27 +113,16 @@ const VALID_SLOTS = SLOT_ENUM.options as readonly string[];
 /** Best effort — a model outage must not stop someone cataloguing clothes. */
 async function classifyGarment(dataUri: string): Promise<GarmentAnalysis> {
   try {
-    const result = await invokeLLM({
-      messages: [
-        { role: "system", content: GARMENT_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Catalogue this garment." },
-            { type: "image_url", image_url: { url: dataUri, detail: "low" } },
-          ],
-        },
-      ],
-      max_tokens: 512,
-      response_format: { type: "json_object" },
+    // Cataloguing is a labelling job, not a judgement call — keep it quick.
+    const parsed = await claudeJson<Partial<GarmentAnalysis>>({
+      system: GARMENT_SYSTEM_PROMPT,
+      text: "Catalogue this garment.",
+      images: [dataUri],
+      schema: GARMENT_SCHEMA,
+      maxTokens: 512,
+      effort: "low",
     });
 
-    const raw = result.choices[0]?.message?.content;
-    const text = typeof raw === "string" ? raw : "";
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) return UNKNOWN_GARMENT;
-
-    const parsed = JSON.parse(match[0]) as Partial<GarmentAnalysis>;
     const slot =
       typeof parsed.slot === "string" && VALID_SLOTS.includes(parsed.slot)
         ? (parsed.slot as GarmentAnalysis["slot"])
@@ -149,20 +150,14 @@ async function classifyGarment(dataUri: string): Promise<GarmentAnalysis> {
 const STYLIST_SYSTEM_PROMPT = `
 You are a personal stylist building outfits from the exact clothes a user owns.
 
-You will be given a numbered list of wardrobe items, each with an id, slot, name, colour and tags. Propose complete outfits using ONLY those item ids.
+You will be given a list of wardrobe items, each with an id, slot, name, colour and tags. Propose complete outfits using ONLY those item ids.
 
-Return ONLY valid JSON (no markdown):
-{
-  "outfits": [
-    {
-      "name": "short evocative name for the look",
-      "item_ids": [ids of the items in this outfit],
-      "occasion": "where this outfit works, e.g. 'office to dinner'",
-      "rationale": "2 sentences on why these pieces work together (colour, proportion, formality)",
-      "score": 0-100 integer for how strong the combination is
-    }
-  ]
-}
+For each outfit give:
+- name: a short evocative name for the look.
+- item_ids: the ids of the items in this outfit.
+- occasion: where this outfit works, e.g. "office to dinner".
+- rationale: 2 sentences on why these pieces work together (colour, proportion, formality).
+- score: 0-100 for how strong the combination is.
 
 Rules:
 - Every id in item_ids MUST come from the provided list. Never invent ids.
@@ -170,6 +165,29 @@ Rules:
 - Never use two items from the same slot, except accessories (max 2).
 - Prefer combinations that genuinely work; if the wardrobe is thin, return fewer outfits rather than bad ones.
 `.trim();
+
+const SUGGESTIONS_SCHEMA = {
+  type: "object",
+  properties: {
+    outfits: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          item_ids: { type: "array", items: { type: "integer" } },
+          occasion: { type: "string" },
+          rationale: { type: "string" },
+          score: { type: "integer", minimum: 0, maximum: 100 },
+        },
+        required: ["name", "item_ids", "occasion", "rationale", "score"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["outfits"],
+  additionalProperties: false,
+} as const;
 
 type SuggestedOutfit = {
   name: string;
@@ -353,21 +371,16 @@ export const wardrobeRouter = router({
 
       let parsedOutfits: unknown = [];
       try {
-        const result = await invokeLLM({
-          messages: [
-            { role: "system", content: STYLIST_SYSTEM_PROMPT },
-            { role: "user", content: userMessage },
-          ],
-          max_tokens: 1500,
-          response_format: { type: "json_object" },
+        // Combining real clothes well is the hard part — let it think.
+        const parsed = await claudeJson<{ outfits?: unknown }>({
+          system: STYLIST_SYSTEM_PROMPT,
+          text: userMessage,
+          schema: SUGGESTIONS_SCHEMA,
+          maxTokens: 8192,
+          effort: "medium",
+          thinking: true,
         });
-        const raw = result.choices[0]?.message?.content;
-        const text = typeof raw === "string" ? raw : "";
-        const match = text.match(/\{[\s\S]*\}/);
-        if (match) {
-          parsedOutfits = (JSON.parse(match[0]) as { outfits?: unknown })
-            .outfits;
-        }
+        parsedOutfits = parsed.outfits;
       } catch (err) {
         console.error("[Wardrobe] Outfit suggestion failed:", err);
         return {
