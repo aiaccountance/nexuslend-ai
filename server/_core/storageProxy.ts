@@ -1,11 +1,27 @@
 import type { Express } from "express";
 import { ENV } from "./env";
+import { isLocalStorage, localStoragePath } from "./localStorage";
 
 export function registerStorageProxy(app: Express) {
   app.get("/manus-storage/*", async (req, res) => {
     const key = (req.params as Record<string, string>)[0];
     if (!key) {
       res.status(400).send("Missing storage key");
+      return;
+    }
+
+    // Served straight off disk when no storage service is configured.
+    if (isLocalStorage()) {
+      let file: string;
+      try {
+        file = localStoragePath(key);
+      } catch {
+        res.status(400).send("Invalid storage key");
+        return;
+      }
+      res.sendFile(file, err => {
+        if (err && !res.headersSent) res.status(404).send("Not found");
+      });
       return;
     }
 

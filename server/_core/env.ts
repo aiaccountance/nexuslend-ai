@@ -9,4 +9,6 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   groqApiKey: process.env.GROQ_API_KEY ?? "",
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
+  // Where uploads go when no S3-backed storage service is configured.
+  localStorageDir: process.env.LOCAL_STORAGE_DIR ?? ".local-storage",
 };
