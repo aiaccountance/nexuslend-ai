@@ -391,3 +391,28 @@ export const wardrobeModels = mysqlTable("wardrobe_models", {
 
 export type WardrobeModel = typeof wardrobeModels.$inferSelect;
 export type InsertWardrobeModel = typeof wardrobeModels.$inferInsert;
+
+// ─── Outfit Arena accounts ────────────────────────────────────────────────────
+// Outfit Arena has its own identity: a handle people are known by, and a
+// password so they can sign up without going through the lending product's
+// sign-in. It hangs off `users` rather than adding columns to it, so the
+// lending side is untouched and an account here is always removable.
+//
+// `passwordHash` is null for someone who arrived through the existing sign-in
+// and only claimed a handle — they keep signing in the way they already do.
+export const outfitAccounts = mysqlTable("outfit_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // Stored lowercase; `displayUsername` keeps the capitalisation they chose.
+  username: varchar("username", { length: 30 }).notNull().unique(),
+  displayUsername: varchar("displayUsername", { length: 30 }).notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }),
+  bio: varchar("bio", { length: 200 }),
+  avatarUrl: varchar("avatarUrl", { length: 512 }),
+  avatarKey: varchar("avatarKey", { length: 512 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OutfitAccount = typeof outfitAccounts.$inferSelect;
+export type InsertOutfitAccount = typeof outfitAccounts.$inferInsert;

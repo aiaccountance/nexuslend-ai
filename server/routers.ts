@@ -9,6 +9,7 @@ import { z } from "zod";
 import * as db from "./db";
 import { outfitsRouter } from "./outfitsRouter";
 import { wardrobeRouter } from "./wardrobeRouter";
+import { accountsRouter } from "./accountsRouter";
 import https from "https";
 import { PDFParse } from "pdf-parse";
 
@@ -778,6 +779,7 @@ export const appRouter = router({
   system: systemRouter,
   outfits: outfitsRouter,
   wardrobe: wardrobeRouter,
+  accounts: accountsRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

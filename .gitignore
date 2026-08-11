@@ -114,3 +114,6 @@ client/public/__manus__/version.json
 
 # Local uploads (used when no object-storage service is configured)
 .local-storage/
+
+# Local project/platform config — contains live secrets, never commit
+.project-config.json
