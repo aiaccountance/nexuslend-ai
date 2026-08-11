@@ -5,14 +5,28 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { StarRating } from "./StarRating";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Sparkles, ImageOff, Crown } from "lucide-react";
+import {
+  Loader2,
+  Sparkles,
+  ImageOff,
+  Crown,
+  LayoutGrid,
+  Rows3,
+} from "lucide-react";
 import { Comments } from "./Comments";
+import { AuthorChip } from "./AuthorChip";
+import { SwipeFeed } from "./SwipeFeed";
 import { toast } from "sonner";
 
 const SORTS = [
   { value: "new", label: "Newest" },
   { value: "top", label: "Top Rated" },
   { value: "trending", label: "Trending" },
+] as const;
+
+const VIEWS = [
+  { value: "grid", label: "Grid view", icon: LayoutGrid },
+  { value: "swipe", label: "Swipe view", icon: Rows3 },
 ] as const;
 
 const CATEGORIES = [
@@ -27,6 +41,7 @@ const CATEGORIES = [
 export default function Feed() {
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>("new");
   const [category, setCategory] = useState<string | undefined>(undefined);
+  const [view, setView] = useState<"grid" | "swipe">("grid");
   const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
 
@@ -62,6 +77,24 @@ export default function Feed() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
+            {VIEWS.map(v => (
+              <button
+                key={v.value}
+                onClick={() => setView(v.value)}
+                aria-pressed={view === v.value}
+                title={v.label}
+                className={`px-2.5 py-1.5 rounded-md transition-colors ${
+                  view === v.value
+                    ? "bg-fuchsia-500/20 text-fuchsia-200"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                <v.icon className="w-4 h-4" />
+                <span className="sr-only">{v.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1">
             {SORTS.map(s => (
               <button
                 key={s.value}
@@ -91,7 +124,7 @@ export default function Feed() {
         </div>
       </div>
 
-      <OutfitOfTheWeek />
+      {view === "grid" && <OutfitOfTheWeek />}
 
       {feedQuery.isLoading && (
         <div className="flex items-center justify-center py-24 text-white/40">
@@ -112,8 +145,22 @@ export default function Feed() {
         </div>
       )}
 
-      <div className="columns-1 sm:columns-2 lg:columns-3 gap-4 space-y-4">
-        {feedQuery.data?.map(({ post, authorName, avgRating }) => (
+      {view === "swipe" && feedQuery.data && feedQuery.data.length > 0 && (
+        <SwipeFeed
+          items={feedQuery.data}
+          canRate={isAuthenticated}
+          onRate={handleRate}
+        />
+      )}
+
+      <div
+        className={
+          view === "grid"
+            ? "columns-1 sm:columns-2 lg:columns-3 gap-4 space-y-4"
+            : "hidden"
+        }
+      >
+        {feedQuery.data?.map(({ post, avgRating, ...author }) => (
           <div
             key={post.id}
             className="break-inside-avoid bg-white/5 border border-white/10 rounded-2xl overflow-hidden group"
@@ -142,12 +189,7 @@ export default function Feed() {
                   {post.caption}
                 </p>
               )}
-              <Link
-                href={`/outfits/u/${post.userId}`}
-                className="text-xs text-white/50 hover:text-fuchsia-300 transition-colors"
-              >
-                by {authorName || "Anonymous"}
-              </Link>
+              <AuthorChip author={author} size="sm" />
               {post.aiTags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {post.aiTags.slice(0, 3).map(tag => (
@@ -232,7 +274,7 @@ function OutfitOfTheWeek() {
           {winner.post.caption || "Untitled look"}
         </p>
         <p className="text-xs text-white/50">
-          by {winner.authorName || "Anonymous"} · {winner.post.battleWins}{" "}
+          <AuthorChip author={winner} size="sm" /> · {winner.post.battleWins}{" "}
           battle
           {winner.post.battleWins === 1 ? " win" : " wins"}
         </p>

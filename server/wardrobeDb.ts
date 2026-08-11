@@ -6,6 +6,7 @@ import {
   InsertWardrobeModel,
   InsertWardrobeItem,
   InsertWardrobeOutfit,
+  outfitAccounts,
   outfitComments,
   InsertOutfitComment,
   users,
@@ -157,9 +158,13 @@ export async function listComments(postId: number) {
     .select({
       comment: outfitComments,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
     })
     .from(outfitComments)
     .leftJoin(users, eq(users.id, outfitComments.userId))
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitComments.userId))
     .where(eq(outfitComments.postId, postId))
     .orderBy(desc(outfitComments.createdAt));
 }

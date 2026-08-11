@@ -80,22 +80,54 @@ export default function Profile({
 
   return (
     <div className="max-w-4xl mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-2xl font-black shrink-0">
-          {(user.name || "U").slice(0, 1).toUpperCase()}
-        </div>
-        <div className="flex-1">
-          <h1 className="text-2xl font-black">
-            {user.name || "Anonymous Stylist"}
+      <div className="flex flex-col sm:flex-row sm:items-start gap-5 sm:gap-8 mb-8">
+        {user.avatarUrl ? (
+          <img
+            src={user.avatarUrl}
+            alt=""
+            className="w-20 h-20 sm:w-28 sm:h-28 rounded-full object-cover shrink-0"
+          />
+        ) : (
+          <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-3xl font-black shrink-0">
+            {(user.displayUsername || user.name || "U")
+              .slice(0, 1)
+              .toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl font-black truncate">
+            {user.displayUsername
+              ? `@${user.displayUsername}`
+              : user.name || "Anonymous Stylist"}
           </h1>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-white/50 mt-1">
-            <span>
-              {followerCount} follower{followerCount === 1 ? "" : "s"}
-            </span>
-            <span>{followingCount} following</span>
-            <span>
-              {posts.length} outfit{posts.length === 1 ? "" : "s"}
-            </span>
+          {user.displayUsername && user.name && (
+            <p className="text-white/60 text-sm mt-0.5">{user.name}</p>
+          )}
+          {user.bio && (
+            <p className="text-white/70 text-sm mt-2 max-w-md whitespace-pre-line">
+              {user.bio}
+            </p>
+          )}
+          {/* The counts people actually scan for, in the order they expect. */}
+          <div className="flex gap-6 mt-4">
+            {[
+              {
+                value: posts.length,
+                label: posts.length === 1 ? "outfit" : "outfits",
+              },
+              {
+                value: followerCount,
+                label: followerCount === 1 ? "follower" : "followers",
+              },
+              { value: followingCount, label: "following" },
+            ].map(stat => (
+              <div key={stat.label}>
+                <div className="font-black text-lg leading-none tabular-nums">
+                  {stat.value}
+                </div>
+                <div className="text-xs text-white/40 mt-1">{stat.label}</div>
+              </div>
+            ))}
           </div>
         </div>
         {!isSelf &&

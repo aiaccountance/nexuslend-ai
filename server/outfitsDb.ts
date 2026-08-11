@@ -1,5 +1,6 @@
 import { eq, ne, and, desc, sql, inArray } from "drizzle-orm";
 import {
+  outfitAccounts,
   outfitPosts,
   InsertOutfitPost,
   outfitRatings,
@@ -52,9 +53,13 @@ export async function getOutfitPostById(id: number) {
     .select({
       post: outfitPosts,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .where(eq(outfitPosts.id, id))
     .limit(1);
   return rows[0];
@@ -90,9 +95,13 @@ export async function listOutfitFeed(opts: {
     .select({
       post: outfitPosts,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .orderBy(orderBy)
     .limit(limit)
     .offset(offset);
@@ -326,9 +335,13 @@ export async function outfitOfTheWeek() {
     .select({
       post: outfitPosts,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .where(
       and(
         sql`${outfitPosts.createdAt} >= ${cutoff}`,
@@ -351,9 +364,13 @@ export async function leaderboardPosts(
     .select({
       post: outfitPosts,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .orderBy(desc(outfitPosts.eloRating))
     .limit(limit);
   if (cutoff) {
@@ -373,13 +390,26 @@ export async function leaderboardUsers(
     .select({
       userId: outfitPosts.userId,
       authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
       postCount: sql<number>`COUNT(${outfitPosts.id})`,
       totalWins: sql<number>`COALESCE(SUM(${outfitPosts.battleWins}), 0)`,
       avgElo: sql<number>`AVG(${outfitPosts.eloRating})`,
     })
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
-    .groupBy(outfitPosts.userId, users.name, users.openId)
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
+    // Every non-aggregated column has to be grouped, or strict SQL mode
+    // rejects the query outright.
+    .groupBy(
+      outfitPosts.userId,
+      users.name,
+      users.openId,
+      outfitAccounts.username,
+      outfitAccounts.displayUsername,
+      outfitAccounts.avatarUrl
+    )
     .orderBy(desc(sql`AVG(${outfitPosts.eloRating})`))
     .limit(limit);
 

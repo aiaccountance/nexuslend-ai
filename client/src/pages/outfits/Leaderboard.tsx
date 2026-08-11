@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { AuthorChip } from "./AuthorChip";
 import { Loader2, Trophy, Medal } from "lucide-react";
 
 const PERIODS = [
@@ -99,13 +100,8 @@ export default function Leaderboard() {
                 className="w-14 h-14 rounded-lg object-cover"
               />
               <div className="flex-1 min-w-0">
-                <Link
-                  href={`/outfits/u/${row.post.userId}`}
-                  className="font-semibold text-sm hover:text-fuchsia-300 transition-colors"
-                >
-                  {row.authorName || "Anonymous"}
-                </Link>
-                <p className="text-xs text-white/40 capitalize">
+                <AuthorChip author={row} size="sm" className="font-semibold" />
+                <p className="text-xs text-white/40 capitalize mt-0.5">
                   {row.post.category}
                 </p>
               </div>
@@ -139,17 +135,9 @@ export default function Leaderboard() {
               >
                 {i < 3 ? <Medal className="w-5 h-5 mx-auto" /> : i + 1}
               </div>
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-sm font-bold shrink-0">
-                {(row.authorName || "U").slice(0, 1).toUpperCase()}
-              </div>
               <div className="flex-1 min-w-0">
-                <Link
-                  href={`/outfits/u/${row.userId}`}
-                  className="font-semibold text-sm hover:text-fuchsia-300 transition-colors"
-                >
-                  {row.authorName || "Anonymous"}
-                </Link>
-                <p className="text-xs text-white/40">
+                <AuthorChip author={row} size="lg" className="font-semibold" />
+                <p className="text-xs text-white/40 mt-0.5">
                   {row.postCount} outfit{row.postCount === 1 ? "" : "s"} posted
                 </p>
               </div>

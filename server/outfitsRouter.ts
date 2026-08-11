@@ -4,6 +4,7 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as outfitsDb from "./outfitsDb";
+import * as accountsDb from "./accountsDb";
 
 const CATEGORY_ENUM = z.enum([
   "casual",
@@ -313,6 +314,7 @@ export const outfitsRouter = router({
       .query(async ({ ctx, input }) => {
         const user = await outfitsDb.getUserByIdPublic(input.userId);
         if (!user) return null;
+        const account = await accountsDb.getAccountByUserId(input.userId);
         const [stats, posts, followerCount, followingCount, following] =
           await Promise.all([
             outfitsDb.getUserProfileStats(input.userId),
@@ -329,7 +331,14 @@ export const outfitsRouter = router({
               : Promise.resolve(false),
           ]);
         return {
-          user: { id: user.id, name: user.name },
+          user: {
+            id: user.id,
+            name: user.name,
+            username: account?.username ?? null,
+            displayUsername: account?.displayUsername ?? null,
+            avatarUrl: account?.avatarUrl ?? null,
+            bio: account?.bio ?? null,
+          },
           stats,
           posts: posts.map(withAvgRating),
           followerCount,

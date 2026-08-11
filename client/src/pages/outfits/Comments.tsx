@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { AuthorChip } from "./AuthorChip";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -61,16 +62,11 @@ export function Comments({ postId }: { postId: number }) {
             </p>
           )}
 
-          {listQuery.data?.map(({ comment, authorName }) => (
+          {listQuery.data?.map(({ comment, ...author }) => (
             <div key={comment.id} className="group flex items-start gap-2">
-              <div className="w-5 h-5 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-[9px] font-bold shrink-0 mt-0.5">
-                {(authorName || "U").slice(0, 1).toUpperCase()}
-              </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] text-white/50">
-                  {authorName || "Anonymous"}
-                </p>
-                <p className="text-xs text-white/80 break-words">
+                <AuthorChip author={author} size="sm" />
+                <p className="text-xs text-white/80 break-words mt-1">
                   {comment.body}
                 </p>
               </div>
