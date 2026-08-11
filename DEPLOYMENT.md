@@ -12,7 +12,7 @@ and it imports no lending code.
 | ---------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------- |
 | `DATABASE_URL`                                             | **Yes**    | Nothing works.                                                               |
 | `JWT_SECRET`                                               | **Yes**    | Nobody can hold a session.                                                   |
-| `VITE_APP_ID`, `OAUTH_SERVER_URL`, `VITE_OAUTH_PORTAL_URL` | **Yes**    | Nobody can sign in.                                                          |
+| `VITE_APP_ID`, `OAUTH_SERVER_URL`, `VITE_OAUTH_PORTAL_URL` | No         | Only the NexusLend sign-in stops working; username/password is unaffected.   |
 | `ANTHROPIC_API_KEY`                                        | For the AI | Uploads still save; every AI feature degrades to a placeholder.              |
 | `BUILT_IN_FORGE_API_URL` / `_KEY`                          | For images | Uploads go to local disk instead of S3; generated imagery is skipped.        |
 | `LOCAL_STORAGE_DIR`                                        | No         | Defaults to `.local-storage/`. Only read when the two forge vars are absent. |
@@ -80,19 +80,20 @@ pnpm start
 
 with `DATABASE_URL`, `JWT_SECRET` and `ANTHROPIC_API_KEY` set.
 
-**Two things to know before choosing this.**
-
-_Sign-in still goes through the current provider._ `getLoginUrl()` in
-`client/src/const.ts` redirects to `${VITE_OAUTH_PORTAL_URL}/app-auth`. Hosting
-elsewhere does not move authentication — you would need to replace that flow
-with your own provider first. This is the real blocker for going fully
-standalone, and it is unstarted work.
+**One thing to know before choosing this.**
 
 _Local disk is single-box only._ Files live on one machine and vanish with it.
 Fine for a v1 trial on one instance; not fine behind a load balancer or on a
 host with an ephemeral filesystem. Point `storagePut`/`storageProxy` at real
 object storage before scaling out — `server/storage.ts` is the only file that
 needs to change.
+
+Sign-in is no longer a blocker. Outfit Arena has its own accounts — username
+and password, held in `outfit_accounts` — so a standalone deploy needs no
+external identity provider. `VITE_OAUTH_PORTAL_URL` and `OAUTH_SERVER_URL` are
+only required if you also want the existing NexusLend sign-in to keep working;
+without them the portal link on the sign-in page simply has nowhere to go, and
+everything else is unaffected.
 
 ---
 
