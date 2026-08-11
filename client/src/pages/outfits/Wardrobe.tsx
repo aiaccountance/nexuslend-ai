@@ -115,6 +115,7 @@ function Closet() {
   const utils = trpc.useUtils();
   const fileRef = useRef<HTMLInputElement>(null);
   const [slotFilter, setSlotFilter] = useState<string | undefined>();
+  const [addAs, setAddAs] = useState<string | undefined>();
 
   const itemsQuery = trpc.wardrobe.listItems.useQuery({
     slot: slotFilter as (typeof SLOTS)[number]["value"] | undefined,
@@ -150,6 +151,9 @@ function Closet() {
         addMutation.mutate({
           fileBase64: result.split(",")[1] ?? "",
           mimeType: file.type,
+          // Only sent when the person picked one; otherwise the classifier
+          // decides.
+          slot: addAs as (typeof SLOTS)[number]["value"] | undefined,
         });
       };
       reader.readAsDataURL(file);
@@ -158,6 +162,38 @@ function Closet() {
 
   return (
     <div>
+      {/* Naming the kind of item up front matters: when the classifier is
+          unavailable everything would otherwise land in one slot, and an
+          outfit needs a top and a bottom before it can be built at all. */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-xs text-white/40">Adding as</span>
+        <button
+          onClick={() => setAddAs(undefined)}
+          aria-pressed={!addAs}
+          className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+            !addAs
+              ? "bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-400/40"
+              : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+          }`}
+        >
+          Let AI decide
+        </button>
+        {SLOTS.map(s => (
+          <button
+            key={s.value}
+            onClick={() => setAddAs(s.value)}
+            aria-pressed={addAs === s.value}
+            className={`px-2.5 py-1 text-xs rounded-lg transition-colors ${
+              addAs === s.value
+                ? "bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-400/40"
+                : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-center gap-2 mb-5">
         <Button
           onClick={() => fileRef.current?.click()}
