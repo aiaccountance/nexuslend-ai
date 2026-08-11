@@ -7,7 +7,7 @@ import { Loader2, Trophy, Medal } from "lucide-react";
 const PERIODS = [
   { value: "day", label: "Today" },
   { value: "week", label: "This Week" },
-  { value: "all", label: "All Time" },
+  { value: "all", label: "This Season" },
 ] as const;
 
 const RANK_COLORS = ["text-yellow-400", "text-slate-300", "text-amber-600"];

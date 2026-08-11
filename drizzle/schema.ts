@@ -1,4 +1,5 @@
 import {
+  index,
   int,
   mysqlEnum,
   mysqlTable,
@@ -270,7 +271,18 @@ export const outfitPosts = mysqlTable("outfit_posts", {
   ratingSum: int("ratingSum").default(0).notNull(),
   ratingCount: int("ratingCount").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  // The feed is always "newest first" or "best first", optionally narrowed to
+  // one category or one person. Without these the database reads every row and
+  // sorts the lot on every page load.
+  newest: index("outfit_posts_createdAt_idx").on(table.createdAt),
+  best: index("outfit_posts_eloRating_idx").on(table.eloRating),
+  byAuthor: index("outfit_posts_userId_idx").on(table.userId),
+  byCategory: index("outfit_posts_category_createdAt_idx").on(
+    table.category,
+    table.createdAt
+  ),
+}));
 
 export type OutfitPost = typeof outfitPosts.$inferSelect;
 export type InsertOutfitPost = typeof outfitPosts.$inferInsert;
@@ -282,7 +294,13 @@ export const outfitRatings = mysqlTable("outfit_ratings", {
   userId: int("userId").notNull(),
   rating: int("rating").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  // "has this person already rated this post" runs on every feed card.
+  byPostAndUser: index("outfit_ratings_postId_userId_idx").on(
+    table.postId,
+    table.userId
+  ),
+}));
 // Note: one rating per (postId, userId) is enforced in the application layer
 // (server/outfitsDb.ts rateOutfitPost does a find-then-update-or-insert), not
 // via a DB constraint, to keep this additive to the existing schema.
@@ -298,7 +316,9 @@ export const outfitMatchups = mysqlTable("outfit_matchups", {
   winnerId: int("winnerId").notNull(),
   voterUserId: int("voterUserId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  byVoter: index("outfit_matchups_voterUserId_idx").on(table.voterUserId),
+}));
 
 export type OutfitMatchup = typeof outfitMatchups.$inferSelect;
 export type InsertOutfitMatchup = typeof outfitMatchups.$inferInsert;
@@ -309,7 +329,11 @@ export const outfitFollows = mysqlTable("outfit_follows", {
   followerId: int("followerId").notNull(),
   followingId: int("followingId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  // Both directions are read: "who do I follow" and "who follows them".
+  following: index("outfit_follows_followerId_idx").on(table.followerId),
+  followers: index("outfit_follows_followingId_idx").on(table.followingId),
+}));
 
 export type OutfitFollow = typeof outfitFollows.$inferSelect;
 export type InsertOutfitFollow = typeof outfitFollows.$inferInsert;
@@ -321,7 +345,9 @@ export const outfitComments = mysqlTable("outfit_comments", {
   userId: int("userId").notNull(),
   body: varchar("body", { length: 500 }).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  byPost: index("outfit_comments_postId_idx").on(table.postId, table.createdAt),
+}));
 
 export type OutfitComment = typeof outfitComments.$inferSelect;
 export type InsertOutfitComment = typeof outfitComments.$inferInsert;
@@ -349,7 +375,10 @@ export const wardrobeItems = mysqlTable("wardrobe_items", {
   aiTags: json("aiTags"),
   aiNotes: text("aiNotes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  // The closet is read as "everything I own", sometimes one drawer at a time.
+  byOwner: index("wardrobe_items_userId_slot_idx").on(table.userId, table.slot),
+}));
 
 export type WardrobeItem = typeof wardrobeItems.$inferSelect;
 export type InsertWardrobeItem = typeof wardrobeItems.$inferInsert;
@@ -371,7 +400,9 @@ export const wardrobeOutfits = mysqlTable("wardrobe_outfits", {
   // Set once this outfit has been published into the competition feed.
   postedPostId: int("postedPostId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, table => ({
+  byOwner: index("wardrobe_outfits_userId_idx").on(table.userId),
+}));
 
 export type WardrobeOutfit = typeof wardrobeOutfits.$inferSelect;
 export type InsertWardrobeOutfit = typeof wardrobeOutfits.$inferInsert;

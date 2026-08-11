@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { cutout } from "./cutout";
 import { Button } from "@/components/ui/button";
 import { Loader2, Layers, User, Sparkles, Check } from "lucide-react";
 import { toast } from "sonner";
@@ -74,20 +75,21 @@ export function OutfitViews({
 }
 
 /**
- * The real photos, stacked in the order they'd be worn. Nothing is generated
- * or altered — this is exactly what the person photographed.
+ * The person's own photos, laid out in the order they'd be worn — a shop's
+ * flat lay. Nothing is generated: the only change is that whatever the clothes
+ * were photographed on is lifted away, so the layers sit on one clean surface
+ * instead of three different bedspreads.
  */
 function FlatLay({ garments }: { garments: FigureGarment[] }) {
   return (
-    <div className="bg-gradient-to-b from-[#f7f4f1] to-[#e9e4df] rounded-2xl p-6">
-      <div className="flex flex-col items-center gap-3">
+    <div className="bg-gradient-to-b from-[#faf8f6] to-[#ece7e1] rounded-2xl p-6">
+      <div className="flex flex-col items-center gap-2">
         {garments.map(garment => (
           <figure key={garment.id} className="w-full max-w-[240px] text-center">
-            <img
+            <CutoutImage
               src={garment.imageUrl}
               alt={garment.name}
-              className="w-full h-auto object-contain drop-shadow-sm"
-              loading="lazy"
+              className="w-full h-auto object-contain drop-shadow-[0_6px_10px_rgba(0,0,0,0.13)]"
             />
             <figcaption className="text-[11px] text-neutral-500 mt-1 capitalize">
               {garment.slot} · {garment.name}
@@ -97,6 +99,32 @@ function FlatLay({ garments }: { garments: FigureGarment[] }) {
       </div>
     </div>
   );
+}
+
+/** A garment photo with its backdrop lifted off, falling back to the original. */
+function CutoutImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt: string;
+  className?: string;
+}) {
+  const [resolved, setResolved] = useState(src);
+
+  useEffect(() => {
+    let live = true;
+    setResolved(src);
+    cutout(src).then(url => {
+      if (live) setResolved(url);
+    });
+    return () => {
+      live = false;
+    };
+  }, [src]);
+
+  return <img src={resolved} alt={alt} className={className} loading="lazy" />;
 }
 
 /** The drawn figure, plus the controls that shape it. */

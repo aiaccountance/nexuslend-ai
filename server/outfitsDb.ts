@@ -316,11 +316,31 @@ export async function recordBattleVote(
 // ─── Leaderboards ─────────────────────────────────────────────────────────────
 export type LeaderboardPeriod = "day" | "week" | "all";
 
-function periodCutoff(period: LeaderboardPeriod): Date | null {
-  if (period === "all") return null;
-  const now = new Date();
-  if (period === "day") return new Date(now.getTime() - 24 * 60 * 60 * 1000);
-  return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+const DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * How far back each board looks.
+ *
+ * "all" is a 90-day season rather than the whole history, for two reasons. It
+ * keeps the board readable — a table that only ever grows would eventually be
+ * topped by people who stopped posting years ago — and it keeps it fast: an
+ * unbounded board has to read and group every post ever made, which is the one
+ * query here that gets slower forever.
+ */
+const SEASON_DAYS = 90;
+
+/**
+ * How many posts someone needs before they can appear on the stylist board.
+ * Ranking by average rating alone means one lucky post beats a whole year of
+ * consistently good ones.
+ */
+const MIN_POSTS_FOR_STYLIST_BOARD = 3;
+
+function periodCutoff(period: LeaderboardPeriod): Date {
+  const now = Date.now();
+  if (period === "day") return new Date(now - DAY);
+  if (period === "week") return new Date(now - 7 * DAY);
+  return new Date(now - SEASON_DAYS * DAY);
 }
 
 /**
@@ -360,7 +380,7 @@ export async function leaderboardPosts(
   const db = await getDb();
   if (!db) return [];
   const cutoff = periodCutoff(period);
-  const query = db
+  return db
     .select({
       post: outfitPosts,
       authorName: users.name,
@@ -371,12 +391,9 @@ export async function leaderboardPosts(
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
+    .where(sql`${outfitPosts.createdAt} >= ${cutoff}`)
     .orderBy(desc(outfitPosts.eloRating))
     .limit(limit);
-  if (cutoff) {
-    return query.where(sql`${outfitPosts.createdAt} >= ${cutoff}`);
-  }
-  return query;
 }
 
 export async function leaderboardUsers(
@@ -386,7 +403,7 @@ export async function leaderboardUsers(
   const db = await getDb();
   if (!db) return [];
   const cutoff = periodCutoff(period);
-  const base = db
+  return db
     .select({
       userId: outfitPosts.userId,
       authorName: users.name,
@@ -400,6 +417,7 @@ export async function leaderboardUsers(
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
+    .where(sql`${outfitPosts.createdAt} >= ${cutoff}`)
     // Every non-aggregated column has to be grouped, or strict SQL mode
     // rejects the query outright.
     .groupBy(
@@ -410,13 +428,11 @@ export async function leaderboardUsers(
       outfitAccounts.displayUsername,
       outfitAccounts.avatarUrl
     )
+    .having(
+      sql`COUNT(${outfitPosts.id}) >= ${MIN_POSTS_FOR_STYLIST_BOARD}`
+    )
     .orderBy(desc(sql`AVG(${outfitPosts.eloRating})`))
     .limit(limit);
-
-  if (cutoff) {
-    return base.where(sql`${outfitPosts.createdAt} >= ${cutoff}`);
-  }
-  return base;
 }
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────

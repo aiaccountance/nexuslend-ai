@@ -19,13 +19,15 @@ import {
   Shapes,
 } from "lucide-react";
 
+// `label` names the drawer when filtering the closet; `one` names a single
+// piece, for "adding as a top" rather than "adding as tops".
 const SLOTS = [
-  { value: "top", label: "Tops" },
-  { value: "bottom", label: "Bottoms" },
-  { value: "dress", label: "Dresses" },
-  { value: "outerwear", label: "Outerwear" },
-  { value: "shoes", label: "Shoes" },
-  { value: "accessory", label: "Accessories" },
+  { value: "top", label: "Tops", one: "Top" },
+  { value: "bottom", label: "Bottoms", one: "Bottom" },
+  { value: "dress", label: "Dresses", one: "Dress" },
+  { value: "outerwear", label: "Outerwear", one: "Coat" },
+  { value: "shoes", label: "Shoes", one: "Shoes" },
+  { value: "accessory", label: "Accessories", one: "Accessory" },
 ] as const;
 
 const CATEGORIES = [
@@ -189,7 +191,7 @@ function Closet() {
                 : "bg-white/5 text-white/60 border border-white/10 hover:text-white"
             }`}
           >
-            {s.label}
+            {s.one}
           </button>
         ))}
       </div>
