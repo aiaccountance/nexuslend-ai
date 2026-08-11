@@ -247,7 +247,127 @@ function validateSuggestions(
   return valid;
 }
 
+// ─── How and when to wear it ──────────────────────────────────────────────────
+const STYLE_NOTES_PROMPT = `
+You are a stylist explaining a specific outfit to the person who owns it.
+
+You will be given the exact garments in the outfit. Write:
+- how_to_wear: 2-3 sentences on wearing it well — tucking, layering, proportion, what to roll or cuff. Concrete, not generic.
+- occasions: 3 to 5 short places or events this genuinely suits.
+- avoid: one short sentence on when NOT to reach for this.
+- finishing_touch: one specific thing that would lift it, using ordinary items most people own.
+
+Speak plainly to the wearer. No hedging, no filler.
+`.trim();
+
+const STYLE_NOTES_SCHEMA = {
+  type: "object",
+  properties: {
+    how_to_wear: { type: "string" },
+    occasions: { type: "array", items: { type: "string" }, maxItems: 5 },
+    avoid: { type: "string" },
+    finishing_touch: { type: "string" },
+  },
+  required: ["how_to_wear", "occasions", "avoid", "finishing_touch"],
+  additionalProperties: false,
+} as const;
+
 export const wardrobeRouter = router({
+  /** Styling notes for a saved outfit: how to wear it, and when. */
+  styleNotes: protectedProcedure
+    .input(z.object({ outfitId: z.number() }))
+    .query(async ({ ctx, input }) =>
+      enforcingRules(async () => {
+        const outfit = await wardrobeDb.requireOwnedOutfit(
+          input.outfitId,
+          ctx.user.id
+        );
+        const items = await wardrobeDb.getWardrobeItemsByIds(
+          ctx.user.id,
+          asNumberArray(outfit.itemIds)
+        );
+        if (items.length === 0) return null;
+
+        const list = items
+          .map(i => `- ${i.slot}: ${i.name}${i.colour ? ` (${i.colour})` : ""}`)
+          .join("\n");
+
+        try {
+          return await claudeJson<{
+            how_to_wear: string;
+            occasions: string[];
+            avoid: string;
+            finishing_touch: string;
+          }>({
+            system: STYLE_NOTES_PROMPT,
+            text: `The outfit:\n${list}${outfit.occasion ? `\n\nThey had in mind: ${outfit.occasion}` : ""}`,
+            schema: STYLE_NOTES_SCHEMA,
+            maxTokens: 4096,
+            effort: "medium",
+            thinking: true,
+          });
+        } catch (err) {
+          // Advice is the point of this view, but losing it must not break the
+          // page — the other two views still work.
+          console.error("[Wardrobe] Style notes failed:", err);
+          return null;
+        }
+      })
+    ),
+
+  // ── The figure outfits are shown on ──────────────────────────────────────
+  avatar: router({
+    get: protectedProcedure.query(async ({ ctx }) => {
+      // Null means they have not chosen yet; the client shows its default.
+      return (await wardrobeDb.getOutfitAvatar(ctx.user.id)) ?? null;
+    }),
+
+    save: protectedProcedure
+      .input(
+        z.object({
+          skinTone: z.enum([
+            "porcelain",
+            "fair",
+            "light",
+            "medium",
+            "tan",
+            "bronze",
+            "deep",
+            "rich",
+          ]),
+          bodyShape: z.enum(["slim", "straight", "athletic", "curvy", "full"]),
+          height: z.enum(["petite", "average", "tall"]),
+          hairStyle: z.enum([
+            "none",
+            "short",
+            "medium",
+            "long",
+            "curly",
+            "afro",
+            "bun",
+          ]),
+          hairColor: z.enum([
+            "black",
+            "brown",
+            "blonde",
+            "auburn",
+            "red",
+            "grey",
+            "dyed",
+          ]),
+        })
+      )
+      .mutation(async ({ ctx, input }) =>
+        enforcingRules(async () => {
+          const saved = await wardrobeDb.saveOutfitAvatar({
+            userId: ctx.user.id,
+            ...input,
+          });
+          return { success: true, avatar: saved };
+        })
+      ),
+  }),
+
   // ── Items ────────────────────────────────────────────────────────────────
   addItem: protectedProcedure
     .input(

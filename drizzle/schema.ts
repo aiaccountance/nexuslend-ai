@@ -416,3 +416,66 @@ export const outfitAccounts = mysqlTable("outfit_accounts", {
 
 export type OutfitAccount = typeof outfitAccounts.$inferSelect;
 export type InsertOutfitAccount = typeof outfitAccounts.$inferInsert;
+
+// ─── The figure someone's outfits are shown on ────────────────────────────────
+// Deliberately a set of choices rather than a generated picture. A drawn figure
+// with the proportions and skin tone someone picked is instant, free, identical
+// every time, and reads as a design choice; a generated body reads as a failed
+// photograph. One row per person, created the first time they open the styler.
+export const outfitAvatars = mysqlTable("outfit_avatars", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // Index into the app's skin tone ramp, kept as a name so the palette can be
+  // re-tuned without rewriting everyone's saved choice.
+  skinTone: mysqlEnum("skinTone", [
+    "porcelain",
+    "fair",
+    "light",
+    "medium",
+    "tan",
+    "bronze",
+    "deep",
+    "rich",
+  ])
+    .default("medium")
+    .notNull(),
+  bodyShape: mysqlEnum("bodyShape", [
+    "slim",
+    "straight",
+    "athletic",
+    "curvy",
+    "full",
+  ])
+    .default("straight")
+    .notNull(),
+  height: mysqlEnum("height", ["petite", "average", "tall"])
+    .default("average")
+    .notNull(),
+  hairStyle: mysqlEnum("hairStyle", [
+    "none",
+    "short",
+    "medium",
+    "long",
+    "curly",
+    "afro",
+    "bun",
+  ])
+    .default("short")
+    .notNull(),
+  hairColor: mysqlEnum("hairColor", [
+    "black",
+    "brown",
+    "blonde",
+    "auburn",
+    "red",
+    "grey",
+    "dyed",
+  ])
+    .default("brown")
+    .notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OutfitAvatar = typeof outfitAvatars.$inferSelect;
+export type InsertOutfitAvatar = typeof outfitAvatars.$inferInsert;

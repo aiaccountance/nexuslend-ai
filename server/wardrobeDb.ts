@@ -7,6 +7,8 @@ import {
   InsertWardrobeItem,
   InsertWardrobeOutfit,
   outfitAccounts,
+  outfitAvatars,
+  InsertOutfitAvatar,
   outfitComments,
   InsertOutfitComment,
   users,
@@ -256,4 +258,38 @@ export async function deleteWardrobeModel(userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(wardrobeModels).where(eq(wardrobeModels.userId, userId));
+}
+
+// ─── The figure outfits are shown on ──────────────────────────────────────────
+export async function getOutfitAvatar(userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const rows = await db
+    .select()
+    .from(outfitAvatars)
+    .where(eq(outfitAvatars.userId, userId))
+    .limit(1);
+  return rows[0];
+}
+
+/** One figure per person; saving again edits the one they already have. */
+export async function saveOutfitAvatar(avatar: InsertOutfitAvatar) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await getOutfitAvatar(avatar.userId);
+  if (existing) {
+    await db
+      .update(outfitAvatars)
+      .set({
+        skinTone: avatar.skinTone,
+        bodyShape: avatar.bodyShape,
+        height: avatar.height,
+        hairStyle: avatar.hairStyle,
+        hairColor: avatar.hairColor,
+      })
+      .where(eq(outfitAvatars.id, existing.id));
+  } else {
+    await db.insert(outfitAvatars).values(avatar);
+  }
+  return (await getOutfitAvatar(avatar.userId))!;
 }

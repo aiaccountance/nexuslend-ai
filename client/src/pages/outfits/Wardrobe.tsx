@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { OutfitViews } from "./OutfitViews";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
@@ -575,63 +576,7 @@ function SavedOutfits() {
               </button>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-4">
-            {outfit.renderImageUrl && (
-              <img
-                src={outfit.renderImageUrl}
-                alt={`${outfit.name} worn`}
-                className="w-full sm:w-40 rounded-xl object-cover border border-white/10 shrink-0"
-              />
-            )}
-            <div className="flex-1">
-              <div className="flex gap-2 flex-wrap">
-                {outfit.items.map(item => (
-                  <img
-                    key={item.id}
-                    src={item.imageUrl}
-                    alt={item.name}
-                    title={item.name}
-                    className="w-14 h-14 rounded-lg object-cover border border-white/10"
-                  />
-                ))}
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 mt-3">
-                <span className="text-[11px] uppercase tracking-wide text-white/35">
-                  {outfit.renderImageUrl ? "Try again on" : "See it on"}
-                </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={renderingId === outfit.id}
-                  onClick={() => seeItOn(outfit.id, "mannequin")}
-                  className="h-7 px-2.5 text-xs border-white/20 text-white hover:bg-white/10"
-                >
-                  {renderingId === outfit.id ? (
-                    <Loader2 className="w-3 h-3 mr-1.5 animate-spin" />
-                  ) : (
-                    <Shapes className="w-3 h-3 mr-1.5" />
-                  )}
-                  A mannequin
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={renderingId === outfit.id}
-                  onClick={() => seeItOn(outfit.id, "personal")}
-                  title={
-                    modelQuery.data
-                      ? "Render this on your photo"
-                      : "Add a photo of yourself on the Your Photo tab first"
-                  }
-                  className="h-7 px-2.5 text-xs border-white/20 text-white hover:bg-white/10"
-                >
-                  <UserRound className="w-3 h-3 mr-1.5" />
-                  {modelQuery.data ? "You" : "You (add a photo)"}
-                </Button>
-              </div>
-            </div>
-          </div>
+          <OutfitViews outfitId={outfit.id} garments={outfit.items} />
           {outfit.aiRationale && (
             <p className="text-sm text-white/60 mt-3">{outfit.aiRationale}</p>
           )}
