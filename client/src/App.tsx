@@ -33,6 +33,8 @@ import OutfitUpload from "@/pages/outfits/Upload";
 import OutfitBattle from "@/pages/outfits/Battle";
 import OutfitLeaderboard from "@/pages/outfits/Leaderboard";
 import OutfitProfile from "@/pages/outfits/Profile";
+import OutfitSignIn from "@/pages/outfits/SignIn";
+import OutfitPickUsername from "@/pages/outfits/PickUsername";
 import OutfitWardrobe from "@/pages/outfits/Wardrobe";
 
 function DashboardRouter() {
@@ -48,7 +50,10 @@ function DashboardRouter() {
         <Route path="/dashboard/ch-extended" component={ChExtended} />
         <Route path="/dashboard/fraud" component={Fraud} />
         <Route path="/dashboard/policy" component={PolicyEngine} />
-        <Route path="/dashboard/model-performance" component={ModelPerformance} />
+        <Route
+          path="/dashboard/model-performance"
+          component={ModelPerformance}
+        />
         <Route path="/dashboard/hmrc-vat" component={HmrcVat} />
         <Route path="/dashboard/postcodes" component={PostcodeEnrich} />
         <Route path="/dashboard/fx-rates" component={FxRates} />
@@ -63,19 +68,46 @@ function DashboardRouter() {
 
 function OutfitArenaRouter() {
   return (
-    <OutfitLayout>
-      <Switch>
-        <Route path="/outfits" component={OutfitFeed} />
-        <Route path="/outfits/upload" component={OutfitUpload} />
-        <Route path="/outfits/wardrobe" component={OutfitWardrobe} />
-        <Route path="/outfits/battle" component={OutfitBattle} />
-        <Route path="/outfits/leaderboard" component={OutfitLeaderboard} />
-        <Route path="/outfits/u/:userId">
-          {params => <OutfitProfile userId={params.userId} />}
-        </Route>
-        <Route component={NotFound} />
-      </Switch>
-    </OutfitLayout>
+    <Switch>
+      {/* Sign-in and onboarding bring their own full-page layout, so they sit
+          outside the app chrome. */}
+      <Route path="/outfits/signin">
+        <OutfitSignIn initialMode="signIn" />
+      </Route>
+      <Route path="/outfits/signup">
+        <OutfitSignIn initialMode="signUp" />
+      </Route>
+      <Route path="/outfits/pick-username" component={OutfitPickUsername} />
+
+      <Route>
+        <OutfitLayout>
+          <Switch>
+            <Route path="/outfits" component={OutfitFeed} />
+            <Route path="/outfits/upload" component={OutfitUpload} />
+            <Route path="/outfits/wardrobe" component={OutfitWardrobe} />
+            <Route path="/outfits/battle" component={OutfitBattle} />
+            <Route path="/outfits/leaderboard" component={OutfitLeaderboard} />
+            {/* Numeric profile links from before handles existed. */}
+            <Route path="/outfits/u/:userId">
+              {params => <OutfitProfile userId={params.userId} />}
+            </Route>
+            {/* Handles last, so it cannot shadow a named page. The router
+                treats "@" as a literal, so the marker is matched here rather
+                than in the path pattern. */}
+            <Route path="/outfits/:handle">
+              {params =>
+                params.handle?.startsWith("@") ? (
+                  <OutfitProfile username={params.handle.slice(1)} />
+                ) : (
+                  <NotFound />
+                )
+              }
+            </Route>
+            <Route component={NotFound} />
+          </Switch>
+        </OutfitLayout>
+      </Route>
+    </Switch>
   );
 }
 
@@ -90,9 +122,18 @@ function Router() {
       <Route path="/outfits/*" component={OutfitArenaRouter} />
       <Route path="/outfits" component={OutfitArenaRouter} />
       <Route path="/demo" component={Demo} />
-      <Route path="/blog/ai-bank-statement-fraud-detection" component={AiBankStatementFraud} />
-      <Route path="/blog/fca-consumer-duty-ai-underwriting" component={FcaConsumerDuty} />
-      <Route path="/blog/cost-manual-loan-processing" component={CostManualLoanProcessing} />
+      <Route
+        path="/blog/ai-bank-statement-fraud-detection"
+        component={AiBankStatementFraud}
+      />
+      <Route
+        path="/blog/fca-consumer-duty-ai-underwriting"
+        component={FcaConsumerDuty}
+      />
+      <Route
+        path="/blog/cost-manual-loan-processing"
+        component={CostManualLoanProcessing}
+      />
       <Route path="/early-access" component={EarlyAccess} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />

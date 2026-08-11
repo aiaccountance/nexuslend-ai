@@ -1,7 +1,5 @@
 import { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import { Button } from "@/components/ui/button";
 import {
   Shirt,
@@ -12,6 +10,7 @@ import {
   LogOut,
   Layers,
 } from "lucide-react";
+import { useAccount } from "./useAccount";
 
 const NAV_ITEMS = [
   { href: "/outfits", label: "Feed", icon: Home },
@@ -23,7 +22,7 @@ const NAV_ITEMS = [
 
 export default function OutfitLayout({ children }: { children: ReactNode }) {
   const [location] = useLocation();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { account, state, signOut } = useAccount();
 
   return (
     <div className="min-h-screen bg-[#0b0a12] text-white">
@@ -64,36 +63,55 @@ export default function OutfitLayout({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
-            {isAuthenticated && user ? (
+            {state === "ready" && account ? (
               <>
                 <Link
-                  href={`/outfits/u/${user.id}`}
+                  href={`/outfits/@${account.username}`}
                   className="flex items-center gap-2 text-sm text-white/80 hover:text-white transition-colors"
                 >
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-xs font-bold">
-                    {(user.name || "U").slice(0, 1).toUpperCase()}
-                  </div>
-                  <span className="hidden sm:inline">{user.name || "You"}</span>
+                  {account.avatarUrl ? (
+                    <img
+                      src={account.avatarUrl}
+                      alt=""
+                      className="w-7 h-7 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-fuchsia-500 to-violet-600 flex items-center justify-center text-xs font-bold">
+                      {account.displayUsername.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <span className="hidden sm:inline">
+                    @{account.displayUsername}
+                  </span>
                 </Link>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => logout()}
+                  onClick={() => signOut()}
                   className="text-white/60 hover:text-white hover:bg-white/10"
                   aria-label="Sign out"
                 >
                   <LogOut className="w-4 h-4" />
                 </Button>
               </>
+            ) : state === "needsHandle" ? (
+              <Link href="/outfits/pick-username">
+                <Button
+                  size="sm"
+                  className="bg-gradient-to-r from-fuchsia-500 to-violet-600 hover:opacity-90 text-white border-0"
+                >
+                  Pick a username
+                </Button>
+              </Link>
             ) : (
-              <a href={getLoginUrl()}>
+              <Link href="/outfits/signin">
                 <Button
                   size="sm"
                   className="bg-gradient-to-r from-fuchsia-500 to-violet-600 hover:opacity-90 text-white border-0"
                 >
                   Sign in
                 </Button>
-              </a>
+              </Link>
             )}
           </div>
         </div>

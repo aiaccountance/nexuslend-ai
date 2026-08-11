@@ -39,10 +39,17 @@ export function getSessionCookieOptions(
   //       ? hostname
   //       : undefined;
 
+  const secure = isSecureRequest(req);
+
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    // SameSite=None is only honoured on a secure connection — browsers discard
+    // such a cookie over plain HTTP, which silently costs the user their
+    // session. Over https keep None, so the app still works when embedded
+    // cross-site; over http fall back to Lax, which is valid without Secure
+    // and keeps sign-in working for local development and single-host trials.
+    sameSite: secure ? "none" : "lax",
+    secure,
   };
 }

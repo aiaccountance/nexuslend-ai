@@ -8,10 +8,28 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { Loader2, UserPlus, UserCheck, Trophy, Swords } from "lucide-react";
 
-export default function Profile({ userId }: { userId: string }) {
-  const id = Number(userId);
+/**
+ * Reachable two ways: by handle (`/outfits/@ava`), which is what everything
+ * links to now, and by the numeric id that older links used.
+ */
+export default function Profile({
+  userId,
+  username,
+}: {
+  userId?: string;
+  username?: string;
+}) {
   const { isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
+
+  // A handle has to be resolved to an id before the profile can be loaded.
+  const accountQuery = trpc.accounts.byUsername.useQuery(
+    { username: username ?? "" },
+    { enabled: Boolean(username), retry: false }
+  );
+
+  const id = username ? (accountQuery.data?.userId ?? NaN) : Number(userId);
+  const resolving = Boolean(username) && accountQuery.isLoading;
 
   const profileQuery = trpc.outfits.profile.get.useQuery(
     { userId: id },
@@ -24,11 +42,19 @@ export default function Profile({ userId }: { userId: string }) {
       toast.error(`Couldn't update follow: ${err.message.slice(0, 120)}`),
   });
 
-  if (profileQuery.isLoading) {
+  if (resolving || profileQuery.isLoading) {
     return (
       <div className="flex items-center justify-center py-24 text-white/40">
         <Loader2 className="w-6 h-6 animate-spin" />
       </div>
+    );
+  }
+
+  if (username && !accountQuery.data) {
+    return (
+      <p className="text-center text-white/40 py-24">
+        No one here goes by @{username}.
+      </p>
     );
   }
 
