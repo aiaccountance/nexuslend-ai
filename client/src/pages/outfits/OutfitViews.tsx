@@ -116,8 +116,8 @@ function CutoutImage({
   useEffect(() => {
     let live = true;
     setResolved(src);
-    cutout(src).then(url => {
-      if (live) setResolved(url);
+    cutout(src).then(result => {
+      if (live) setResolved(result.url);
     });
     return () => {
       live = false;

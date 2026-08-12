@@ -32,27 +32,66 @@ const DARKEST_SHADOW = 0.45;
 /** Corners must agree within this to be believed as one plain backdrop. */
 const CORNER_AGREEMENT = 60;
 
-/** If the flood eats more than this much, it found the garment, not the bed. */
-const MAX_REMOVED = 0.93;
+/**
+ * If the flood eats nearly everything it found the garment, not the bed.
+ *
+ * The bar has to be this high because a pair of shoes photographed on a table
+ * really is a few percent of the picture — an earlier, stricter version of
+ * this refused every photo where the garment didn't fill the frame, which is
+ * most photos people actually take.
+ */
+const MAX_REMOVED = 0.988;
 
 /** ...and if it eats less than this, there was no backdrop worth removing. */
 const MIN_REMOVED = 0.02;
 
-const cache = new Map<string, Promise<string>>();
+/**
+ * However small a share it is, what survives has to be big enough to be a
+ * garment rather than a speck of dust or a hair on the sheet.
+ */
+const MIN_KEPT_PIXELS = 900;
+
+/** What lifting a garment off its background produced. */
+export type Cutout = {
+  /** The cut-out image, or the original photo when it couldn't be lifted. */
+  url: string;
+  /** False when the original was kept, so callers know not to trust the rest. */
+  lifted: boolean;
+  /**
+   * How wide the garment's own body is, as a fraction of its whole width.
+   *
+   * This is what makes a top land on a figure correctly. A t-shirt laid flat
+   * with the sleeves spread is nearly twice as wide as its chest; a jumper
+   * with the sleeves down is barely wider than its chest. Scaling both to the
+   * same box puts one of them on the figure looking like a vest. Measured
+   * below the sleeves, where what is left is the garment's body, so the chest
+   * of the garment lands on the chest of the figure whichever way it was
+   * photographed.
+   */
+  bodyRatio: number;
+};
+
+const cache = new Map<string, Promise<Cutout>>();
+
+const UNTOUCHED = (src: string): Cutout => ({
+  url: src,
+  lifted: false,
+  bodyRatio: 1,
+});
 
 /**
  * The cut-out version of `src`, or `src` itself when it can't be cut out
  * safely. Each photo is only ever processed once per page load.
  */
-export function cutout(src: string): Promise<string> {
+export function cutout(src: string): Promise<Cutout> {
   const hit = cache.get(src);
   if (hit) return hit;
-  const work = removeBackdrop(src).catch(() => src);
+  const work = removeBackdrop(src).catch(() => UNTOUCHED(src));
   cache.set(src, work);
   return work;
 }
 
-async function removeBackdrop(src: string): Promise<string> {
+async function removeBackdrop(src: string): Promise<Cutout> {
   const image = await load(src);
 
   const scale = Math.min(1, MAX_EDGE / Math.max(image.width, image.height));
@@ -63,7 +102,7 @@ async function removeBackdrop(src: string): Promise<string> {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return src;
+  if (!ctx) return UNTOUCHED(src);
   ctx.drawImage(image, 0, 0, w, h);
 
   // Reading pixels back from another origin's image is blocked by the browser.
@@ -71,15 +110,19 @@ async function removeBackdrop(src: string): Promise<string> {
   const px = frame.data;
 
   const backdrop = readBackdrop(px, w, h);
-  if (!backdrop) return src;
+  if (!backdrop) return UNTOUCHED(src);
 
   const removed = floodFromEdges(px, w, h, backdrop);
-  const share = removed / (w * h);
-  if (share > MAX_REMOVED || share < MIN_REMOVED) return src;
+  const total = w * h;
+  const share = removed / total;
+  if (share < MIN_REMOVED) return UNTOUCHED(src);
+  if (share > MAX_REMOVED || total - removed < MIN_KEPT_PIXELS) {
+    return UNTOUCHED(src);
+  }
 
   softenEdges(px, w, h);
   ctx.putImageData(frame, 0, 0);
-  return trim(canvas, px, w, h);
+  return trim(canvas, px, w, h, src);
 }
 
 /**
@@ -94,8 +137,9 @@ function trim(
   source: HTMLCanvasElement,
   px: Uint8ClampedArray,
   w: number,
-  h: number
-): string {
+  h: number,
+  src: string
+): Cutout {
   let minX = w;
   let minY = h;
   let maxX = -1;
@@ -112,7 +156,9 @@ function trim(
     }
   }
 
-  if (maxX < minX || maxY < minY) return source.toDataURL("image/png");
+  if (maxX < minX || maxY < minY) return UNTOUCHED(src);
+
+  const bodyRatio = bodyWidth(px, w, minX, maxX, minY, maxY);
 
   // A hair of margin, so a softened edge isn't sliced off.
   const pad = Math.round(Math.max(w, h) * 0.01);
@@ -125,7 +171,7 @@ function trim(
   cropped.width = maxX - minX + 1;
   cropped.height = maxY - minY + 1;
   const ctx = cropped.getContext("2d");
-  if (!ctx) return source.toDataURL("image/png");
+  if (!ctx) return UNTOUCHED(src);
   ctx.drawImage(
     source,
     minX,
@@ -137,7 +183,47 @@ function trim(
     cropped.width,
     cropped.height
   );
-  return cropped.toDataURL("image/png");
+  return { url: cropped.toDataURL("image/png"), lifted: true, bodyRatio };
+}
+
+/**
+ * How wide the garment's body is, relative to its full width.
+ *
+ * Sampled across the lower part of the garment, which is the one place a top
+ * is reliably body and nothing else — sleeves are at the top, and at the very
+ * top there is a collar. The median of those rows shrugs off a drawstring or
+ * a stray label.
+ */
+function bodyWidth(
+  px: Uint8ClampedArray,
+  w: number,
+  minX: number,
+  maxX: number,
+  minY: number,
+  maxY: number
+): number {
+  const fullWidth = maxX - minX + 1;
+  const from = minY + Math.round((maxY - minY) * 0.6);
+  const to = minY + Math.round((maxY - minY) * 0.85);
+  const widths: number[] = [];
+
+  for (let y = from; y <= to; y++) {
+    let left = -1;
+    let right = -1;
+    for (let x = minX; x <= maxX; x++) {
+      if (px[(y * w + x) * 4 + 3] > 40) {
+        if (left < 0) left = x;
+        right = x;
+      }
+    }
+    if (left >= 0) widths.push(right - left + 1);
+  }
+
+  if (widths.length === 0) return 1;
+  widths.sort((a, b) => a - b);
+  const median = widths[Math.floor(widths.length / 2)];
+  // Clamped: a measurement this far out means the sample missed the garment.
+  return Math.min(1, Math.max(0.3, median / fullWidth));
 }
 
 function load(src: string): Promise<HTMLImageElement> {

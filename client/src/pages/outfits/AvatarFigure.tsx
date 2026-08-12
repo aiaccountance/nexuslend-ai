@@ -6,7 +6,7 @@ import {
   HEIGHTS,
   type AvatarChoice,
 } from "./avatar";
-import { cutout } from "./cutout";
+import { cutout, type Cutout } from "./cutout";
 
 /**
  * The figure an outfit is shown on.
@@ -42,6 +42,13 @@ const ANKLE_Y = 201;
 const SOLE_Y = 209;
 const VIEW_HEIGHT = 224;
 
+/**
+ * How much wider a top is when it's laid flat than the shoulders it goes on.
+ * A jumper with its sleeves out is about half again as wide as its chest, so
+ * its region is scaled up by that much before the clip trims what overhangs.
+ */
+const SLEEVE_SPREAD = 1.42;
+
 export type GarmentSlot =
   | "outerwear"
   | "top"
@@ -75,7 +82,7 @@ export function AvatarFigure({
   // Anything still showing its original photo kept its backdrop; say so rather
   // than leaving someone wondering why one piece is a grey rectangle.
   const stubborn = garments
-    .filter(g => cutouts[g.id] === g.imageUrl)
+    .filter(g => cutouts[g.id] && !cutouts[g.id].lifted)
     .map(g => g.name);
 
   // Height lengthens everything below the shoulders and leaves the head alone,
@@ -103,6 +110,170 @@ export function AvatarFigure({
 
   const skinFill = `url(#skin-${uid})`;
 
+  // Clothing sits a little outside the body. Everything a garment is clipped
+  // to is the body plus this much, so a jumper reads as worn rather than
+  // painted on.
+  const ease = 1.9;
+
+  /**
+   * The torso, optionally with ease and cut off at a given height — the same
+   * outline draws the body and clips a top to it.
+   */
+  const torso = (grow = 0, bottom = crotchY) => {
+    const sh = shoulder + grow;
+    const wa = waist + grow;
+    const hp = hip + grow;
+    const nk = neck + grow * 0.4;
+    const top = y(SHOULDER_Y) - grow;
+    return `M ${CX - sh} ${top}
+            Q ${CX - sh * 0.6} ${top - 4.5}, ${CX - nk} ${y(NECK_Y) - grow}
+            L ${CX + nk} ${y(NECK_Y) - grow}
+            Q ${CX + sh * 0.6} ${top - 4.5}, ${CX + sh} ${top}
+            C ${CX + sh + 0.5} ${bustY}, ${CX + wa + 1.5} ${waistY - 11}, ${CX + wa} ${waistY}
+            C ${CX + wa - 0.5} ${waistY + 8}, ${CX + hp} ${hipY - 9}, ${CX + hp} ${Math.min(hipY, bottom)}
+            L ${CX + hp} ${bottom}
+            L ${CX - hp} ${bottom}
+            L ${CX - hp} ${Math.min(hipY, bottom)}
+            C ${CX - hp} ${hipY - 9}, ${CX - wa + 0.5} ${waistY + 8}, ${CX - wa} ${waistY}
+            C ${CX - wa - 1.5} ${waistY - 11}, ${CX - sh - 0.5} ${bustY}, ${CX - sh} ${top} Z`;
+  };
+
+  /** One leg, with ease, from the hip down to `bottom`. */
+  const leg = (side: -1 | 1, grow = 0, bottom = soleY) => {
+    const c = CX + side * legOffset;
+    const th = thigh + grow;
+    const kn = knee + grow;
+    const an = ankle + grow;
+    return `M ${c - th} ${hipY - 8}
+            C ${c - th} ${kneeY - 34}, ${c - kn - 1.5} ${kneeY - 15}, ${c - kn} ${kneeY}
+            C ${c - kn} ${kneeY + 24}, ${c - an - 1.5} ${ankleY - 15}, ${c - an} ${bottom}
+            L ${c + an} ${bottom}
+            C ${c + an + 1.5} ${ankleY - 15}, ${c + kn} ${kneeY + 24}, ${c + kn} ${kneeY}
+            C ${c + kn + 1.5} ${kneeY - 15}, ${c + th * 0.82} ${kneeY - 34}, ${c + th * 0.6} ${hipY - 8} Z`;
+  };
+
+  /** One arm as a solid shape, for clipping a sleeve to it. */
+  const arm = (side: -1 | 1, toY: number) => {
+    const w = 5.2;
+    const top = y(SHOULDER_Y) - 1;
+    const outer = CX + side * (shoulder + w);
+    const inner = CX + side * (shoulder - w * 0.9);
+    return `M ${inner} ${top}
+            L ${outer} ${top}
+            C ${CX + side * (shoulder + w + 2)} ${bustY}, ${CX + side * (shoulder + w + 1)} ${toY - 8}, ${CX + side * (shoulder + w)} ${toY}
+            L ${CX + side * (shoulder - w * 0.6)} ${toY}
+            C ${CX + side * (shoulder - w * 0.4)} ${toY - 8}, ${CX + side * (shoulder - w)} ${bustY}, ${inner} ${top} Z`;
+  };
+
+  const foot = (side: -1 | 1) => {
+    const c = CX + side * legOffset;
+    const an = ankle + ease;
+    return `M ${c - an} ${ankleY - 10}
+            L ${c + an} ${ankleY - 10}
+            C ${c + an + 1} ${soleY - 3}, ${c + an * 1.7} ${soleY + 1}, ${c + an * 2} ${soleY + 1}
+            L ${c - an * 1.2} ${soleY + 1}
+            C ${c - an * 1.3} ${soleY - 3}, ${c - an} ${ankleY + 3}, ${c - an} ${ankleY - 10} Z`;
+  };
+
+  /**
+   * The shape each kind of garment is allowed to cover. A garment photo is
+   * scaled to fill its region and then cut to this, so what shows is the
+   * person's own fabric taking the shape of the body — which is what wearing
+   * something looks like.
+   */
+  const clipShapes: Record<GarmentSlot, string[]> = {
+    top: [torso(ease, waistY + 9), arm(-1, waistY - 2), arm(1, waistY - 2)],
+    outerwear: [
+      torso(ease * 1.6, hipY + 8),
+      arm(-1, hipY + 2),
+      arm(1, hipY + 2),
+    ],
+    dress: [
+      torso(ease, crotchY),
+      arm(-1, bustY),
+      arm(1, bustY),
+      leg(-1, ease * 1.4, kneeY + 6),
+      leg(1, ease * 1.4, kneeY + 6),
+    ],
+    bottom: [
+      torso(ease, hipY + 2).replace(
+        `M ${CX - shoulder - ease} ${y(SHOULDER_Y) - ease}`,
+        `M ${CX - shoulder - ease} ${waistY - 3}`
+      ),
+      leg(-1, ease, ankleY - 1),
+      leg(1, ease, ankleY - 1),
+    ],
+    shoes: [foot(-1), foot(1)],
+    accessory: [
+      `M ${CX - neck - 3} ${y(NECK_Y) - 6}
+       L ${CX + neck + 3} ${y(NECK_Y) - 6}
+       L ${CX + shoulder * 0.8} ${y(SHOULDER_Y) + 18}
+       L ${CX - shoulder * 0.8} ${y(SHOULDER_Y) + 18} Z`,
+    ],
+  };
+
+  /**
+   * How each kind of garment is fitted into its region.
+   *
+   * Trousers are the same shape as legs, so filling the region and letting
+   * the clip trim the edges is invisible and gets the hem down to the ankle.
+   * A top is not the same shape as a torso — it has sleeves that stick out —
+   * so filling would crop them off at the bicep. Those are fitted whole and
+   * hung from the shoulder line, which is where a garment hangs from.
+   */
+  const fit: Record<GarmentSlot, string> = {
+    top: "xMidYMin meet",
+    outerwear: "xMidYMin meet",
+    dress: "xMidYMin meet",
+    bottom: "xMidYMin slice",
+    shoes: "xMidYMax meet",
+    accessory: "xMidYMin meet",
+  };
+
+  /**
+   * The box a garment's photo is scaled into before it is cut to shape.
+   *
+   * `bodyRatio` is how wide the garment's own body is compared with its whole
+   * width, measured from the photo. Dividing by it scales a t-shirt with its
+   * sleeves spread wide up until its chest — not its sleeve span — matches
+   * the figure's chest, and the sleeves fall onto the arms where they belong.
+   */
+  const regions = (
+    slot: GarmentSlot,
+    bodyRatio: number
+  ): [number, number, number, number] => {
+    const shoulderSpan = (shoulder + ease) * 2;
+    const hipSpan = (hip + ease) * 2;
+
+    switch (slot) {
+      case "top": {
+        const w = shoulderSpan / bodyRatio;
+        return [CX - w / 2, y(SHOULDER_Y) - 2, w, w * 1.6];
+      }
+      case "outerwear": {
+        const w = (shoulderSpan * 1.06) / bodyRatio;
+        return [CX - w / 2, y(SHOULDER_Y) - 3, w, w * 1.9];
+      }
+      case "dress": {
+        const w = (Math.max(shoulderSpan, hipSpan) * 1.02) / bodyRatio;
+        return [CX - w / 2, y(SHOULDER_Y) - 2, w, w * 3];
+      }
+      case "bottom":
+        // Trousers are leg-shaped already, so this one fills the legs and
+        // lets the clip trim the sides — which is what gets the hem down to
+        // the ankle instead of stopping at the knee.
+        return [CX - hipSpan / 2, waistY - 3, hipSpan, ankleY - waistY + 2];
+      case "shoes": {
+        const w = (legOffset + ankle * 2.4) * 2;
+        return [CX - w / 2, ankleY - 11, w, soleY - ankleY + 13];
+      }
+      case "accessory": {
+        const w = (shoulder * 1.7) / bodyRatio;
+        return [CX - w / 2, y(NECK_Y) - 7, w, w * 1.4];
+      }
+    }
+  };
+
   return (
     <div className={`relative ${className}`}>
       <svg
@@ -122,6 +293,15 @@ export function AvatarFigure({
             <stop offset="0%" stopColor={shade(hair, 0.22)} />
             <stop offset="55%" stopColor={hair} />
             <stop offset="100%" stopColor={shade(hair, -0.25)} />
+          </linearGradient>
+          {/* Light left, shadow right, matching the skin — and darker at the
+              very edges, which is what makes a shape look round. */}
+          <linearGradient id={`cloth-${uid}`} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="rgba(255,255,255,0.20)" />
+            <stop offset="18%" stopColor="rgba(255,255,255,0.07)" />
+            <stop offset="48%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="82%" stopColor="rgba(0,0,0,0.13)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0.26)" />
           </linearGradient>
           <radialGradient id={`ground-${uid}`}>
             <stop offset="0%" stopColor="rgba(0,0,0,0.32)" />
@@ -257,31 +437,59 @@ export function AvatarFigure({
 
         {/* The clothes, over the figure, in the order they'd be put on. */}
         {garments.map(garment => {
-          const box = placement(garment.slot, {
-            shoulder,
-            waist,
-            hip,
-            shoulderY: y(SHOULDER_Y),
-            neckY: y(NECK_Y),
-            waistY,
-            hipY,
-            crotchY,
-            kneeY,
-            ankleY,
-            soleY,
-          });
+          const slot = (garment.slot in clipShapes
+            ? garment.slot
+            : "top") as GarmentSlot;
+          const cut = cutouts[garment.id];
+          const href = cut?.url ?? garment.imageUrl;
+          // A cut-out is scaled against the body and then trimmed to it. A
+          // photo still carrying its background is not — trimming it to the
+          // body would print a body-shaped piece of someone's duvet — so it
+          // is fitted whole inside the region instead.
+          const lifted = cut?.lifted ?? false;
+          const [x, top, width, height] = regions(
+            slot,
+            lifted ? cut.bodyRatio : 1
+          );
+          const clip = `wear-${uid}-${garment.id}`;
+
           return (
-            <image
-              key={garment.id}
-              href={cutouts[garment.id] ?? garment.imageUrl}
-              x={box.x}
-              y={box.y}
-              width={box.width}
-              height={box.height}
-              preserveAspectRatio={`xMidY${box.anchor} meet`}
-            >
-              <title>{garment.name}</title>
-            </image>
+            <g key={garment.id}>
+              <defs>
+                <clipPath id={clip} clipPathUnits="userSpaceOnUse">
+                  {clipShapes[slot].map((d, i) => (
+                    <path key={i} d={d} />
+                  ))}
+                </clipPath>
+              </defs>
+
+              <g clipPath={lifted ? `url(#${clip})` : undefined}>
+                <image
+                  href={href}
+                  x={x}
+                  y={top}
+                  width={width}
+                  height={height}
+                  preserveAspectRatio={lifted ? fit[slot] : "xMidYMin meet"}
+                >
+                  <title>{garment.name}</title>
+                </image>
+
+                {/* The same light that falls on the body falls on the cloth.
+                    Without this the garment reads as a sticker laid on top
+                    rather than fabric wrapped round something. */}
+                {lifted && (
+                  <rect
+                    x={x}
+                    y={top}
+                    width={width}
+                    height={height}
+                    fill={`url(#cloth-${uid})`}
+                    pointerEvents="none"
+                  />
+                )}
+              </g>
+            </g>
           );
         })}
       </svg>
@@ -296,61 +504,6 @@ export function AvatarFigure({
       )}
     </div>
   );
-}
-
-// ─── Where each garment sits on this particular figure ───────────────────────
-
-type Frame = {
-  shoulder: number;
-  waist: number;
-  hip: number;
-  shoulderY: number;
-  neckY: number;
-  waistY: number;
-  hipY: number;
-  crotchY: number;
-  kneeY: number;
-  ankleY: number;
-  soleY: number;
-};
-
-/**
- * A box for the garment to sit inside, measured off the figure rather than
- * fixed, so a curvy figure gets a wider skirt and a tall one a longer one. The
- * photo keeps its own proportions inside the box.
- */
-function placement(slot: string, f: Frame) {
-  // "Min" hangs the garment from the top of its box — a jumper starts at the
-  // shoulders and stops wherever it stops. "Max" stands it on the bottom,
-  // which is what shoes do. Centring instead would float everything.
-  const box = (
-    halfWidth: number,
-    top: number,
-    bottom: number,
-    anchor: "Min" | "Max" = "Min"
-  ) => ({
-    x: CX - halfWidth,
-    y: top,
-    width: halfWidth * 2,
-    height: Math.max(bottom - top, 1),
-    anchor,
-  });
-
-  switch (slot) {
-    case "outerwear":
-      return box(f.shoulder * 1.5, f.shoulderY - 2, f.hipY + 14);
-    case "dress":
-      return box(Math.max(f.shoulder, f.hip) * 1.34, f.shoulderY - 1, f.kneeY);
-    case "bottom":
-      return box(f.hip * 1.22, f.waistY - 4, f.ankleY + 2);
-    case "shoes":
-      return box(f.hip * 0.95, f.ankleY - 12, f.soleY + 4, "Max");
-    case "accessory":
-      return box(f.shoulder * 0.8, f.neckY - 6, f.shoulderY + 18);
-    case "top":
-    default:
-      return box(f.shoulder * 1.34, f.shoulderY - 1, f.waistY + 10);
-  }
 }
 
 // ─── Hair ────────────────────────────────────────────────────────────────────
@@ -469,16 +622,18 @@ function shade(hex: string, amount: number): string {
  * blank space.
  */
 function useCutouts(garments: FigureGarment[]) {
-  const [urls, setUrls] = useState<Record<number, string>>({});
+  const [urls, setUrls] = useState<Record<number, Cutout>>({});
   const key = garments.map(g => `${g.id}:${g.imageUrl}`).join("|");
 
   useEffect(() => {
     let live = true;
     for (const garment of garments) {
-      cutout(garment.imageUrl).then(url => {
+      cutout(garment.imageUrl).then(result => {
         if (live) {
           setUrls(prev =>
-            prev[garment.id] === url ? prev : { ...prev, [garment.id]: url }
+            prev[garment.id]?.url === result.url
+              ? prev
+              : { ...prev, [garment.id]: result }
           );
         }
       });
