@@ -16,7 +16,19 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ENV } from "./env";
 
+/**
+ * The model for work where the quality of the judgement is the product — a
+ * stylist's read on an outfit, which is the thing someone came for.
+ */
 export const CLAUDE_MODEL = "claude-opus-5";
+
+/**
+ * The model for routine labelling: what garment is this, what colour is it.
+ * There is a right answer and it is visible in the photo, so the cheaper
+ * model gets it right and costs a fifth as much. At a few pence a head that
+ * difference is nothing; across a wardrobe each, it is most of the bill.
+ */
+export const CLAUDE_FAST_MODEL = "claude-haiku-4-5";
 
 /** The media types the Messages API accepts for image blocks. */
 const SUPPORTED_IMAGE_TYPES = [
@@ -122,6 +134,8 @@ export type ClaudeJsonRequest = {
   effort?: "low" | "medium" | "high";
   /** Extended thinking. Off by default — most of these calls are quick. */
   thinking?: boolean;
+  /** Defaults to `CLAUDE_MODEL`; pass `CLAUDE_FAST_MODEL` for routine work. */
+  model?: string;
 };
 
 /**
@@ -140,6 +154,7 @@ export async function claudeJson<T>(request: ClaudeJsonRequest): Promise<T> {
     maxTokens = 2048,
     effort = "low",
     thinking = false,
+    model = CLAUDE_MODEL,
   } = request;
 
   const content: Anthropic.ContentBlockParam[] = [
@@ -149,7 +164,7 @@ export async function claudeJson<T>(request: ClaudeJsonRequest): Promise<T> {
 
   const message = await getClient()
     .messages.stream({
-      model: CLAUDE_MODEL,
+      model,
       max_tokens: maxTokens,
       system,
       messages: [{ role: "user", content }],

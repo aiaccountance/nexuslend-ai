@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
-import { claudeJson } from "./_core/claude";
+import { CLAUDE_FAST_MODEL, claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as wardrobeDb from "./wardrobeDb";
 import * as outfitsDb from "./outfitsDb";
@@ -123,6 +123,10 @@ async function classifyGarment(dataUri: string): Promise<GarmentAnalysis> {
       schema: GARMENT_SCHEMA,
       maxTokens: 512,
       effort: "low",
+      // Naming a garment from a photo is a labelling job with a right answer,
+      // not a judgement call — and it runs once per item in someone's whole
+      // wardrobe, so it is where the bill is.
+      model: CLAUDE_FAST_MODEL,
     });
 
     const slot =
