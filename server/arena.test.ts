@@ -12,6 +12,10 @@ vi.mock("./storage", () => ({
 }));
 
 vi.mock("./_core/claude", () => ({
+  // The real module exports the model names too; a factory mock replaces the
+  // whole module, so anything the code imports has to be here.
+  CLAUDE_MODEL: "claude-opus-5",
+  CLAUDE_FAST_MODEL: "claude-haiku-4-5",
   claudeJson: vi.fn().mockResolvedValue({
     tags: ["all black", "oversized"],
     style_score: 80,
