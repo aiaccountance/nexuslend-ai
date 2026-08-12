@@ -6,6 +6,7 @@ import { storagePut } from "./storage";
 import * as outfitsDb from "./outfitsDb";
 import * as accountsDb from "./accountsDb";
 import * as notifications from "./notificationsDb";
+import { enforce } from "./rateLimit";
 
 const CATEGORY_ENUM = z.enum([
   "casual",
@@ -168,6 +169,10 @@ export const outfitsRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Every upload runs a vision model and writes a file, so this is the
+      // most expensive thing anyone can ask for.
+      enforce("upload", ctx.user.id);
+
       const buffer = Buffer.from(input.fileBase64, "base64");
       const ext = input.mimeType.split("/")[1] || "jpg";
       const key = `outfit-arena/${ctx.user.id}-${Date.now()}.${ext}`;

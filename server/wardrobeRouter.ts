@@ -6,6 +6,7 @@ import { storagePut } from "./storage";
 import * as wardrobeDb from "./wardrobeDb";
 import * as outfitsDb from "./outfitsDb";
 import * as notifications from "./notificationsDb";
+import { enforce } from "./rateLimit";
 import {
   generateCleanGarmentShot,
   generateOutfitRender,
@@ -381,6 +382,11 @@ export const wardrobeRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
+      // Cataloguing a garment runs a vision model, same as posting an outfit.
+      // The allowance is higher because someone photographing their whole
+      // wardrobe in one sitting is a real thing people do.
+      enforce("addGarment", ctx.user.id);
+
       const buffer = Buffer.from(input.fileBase64, "base64");
       const ext = input.mimeType.split("/")[1] || "jpg";
       const key = `wardrobe/${ctx.user.id}-${Date.now()}.${ext}`;
@@ -820,6 +826,7 @@ export const wardrobeRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        enforce("comment", ctx.user.id);
         const post = await outfitsDb.getOutfitPostById(input.postId);
         if (!post) {
           throw new TRPCError({

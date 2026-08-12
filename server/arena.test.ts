@@ -38,6 +38,7 @@ import {
 } from "../drizzle/schema";
 import { eq, sql } from "drizzle-orm";
 import { settleFinishedChallenges } from "./challengesDb";
+import { LIMITS, enforce, resetAllLimits, take } from "./rateLimit";
 
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -75,6 +76,10 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
+  // Tests upload far more than a person would, so the allowance is cleared
+  // between them — otherwise a later test fails for running out of quota
+  // rather than for anything to do with what it is testing.
+  resetAllLimits();
   if (!dbAvailable) return;
   const conn = await getDb();
   if (!conn) return;
@@ -456,5 +461,59 @@ describe("search", () => {
       .createCaller(ctxFor(null))
       .arena.search.trendingTags();
     expect(tags).toContain("all black");
+  });
+});
+
+describe("rate limits", () => {
+  beforeEach(() => resetAllLimits());
+
+  it("lets a normal amount through and stops a flood", () => {
+    const { max } = LIMITS.upload;
+    for (let i = 0; i < max; i++) {
+      expect(take("upload", 1).allowed).toBe(true);
+    }
+    expect(take("upload", 1).allowed).toBe(false);
+  });
+
+  it("counts each person separately", () => {
+    const { max } = LIMITS.upload;
+    for (let i = 0; i < max; i++) take("upload", 1);
+    expect(take("upload", 1).allowed).toBe(false);
+    expect(take("upload", 2).allowed).toBe(true);
+  });
+
+  it("counts each action separately", () => {
+    const { max } = LIMITS.upload;
+    for (let i = 0; i < max; i++) take("upload", 1);
+    expect(take("upload", 1).allowed).toBe(false);
+    expect(take("comment", 1).allowed).toBe(true);
+  });
+
+  it("says how long is left, and it is never negative", () => {
+    const { max } = LIMITS.signIn;
+    for (let i = 0; i < max; i++) take("signIn", "1.2.3.4");
+    const blocked = take("signIn", "1.2.3.4");
+    expect(blocked.allowed).toBe(false);
+    expect(blocked.retryAfterMs).toBeGreaterThan(0);
+    expect(blocked.retryAfterMs).toBeLessThanOrEqual(LIMITS.signIn.windowMs);
+  });
+
+  it("throws an error that tells someone when to come back", () => {
+    const { max } = LIMITS.upload;
+    for (let i = 0; i < max; i++) take("upload", 7);
+    expect(() => enforce("upload", 7)).toThrow(/try again in/);
+  });
+
+  it("forgives once the window has passed", () => {
+    vi.useFakeTimers();
+    try {
+      const { max, windowMs } = LIMITS.upload;
+      for (let i = 0; i < max; i++) take("upload", 9);
+      expect(take("upload", 9).allowed).toBe(false);
+      vi.advanceTimersByTime(windowMs + 1);
+      expect(take("upload", 9).allowed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

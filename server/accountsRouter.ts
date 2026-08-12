@@ -8,6 +8,20 @@ import { storagePut } from "./storage";
 import * as accountsDb from "./accountsDb";
 import * as outfitsDb from "./outfitsDb";
 import { MIN_PASSWORD_LENGTH, MAX_PASSWORD_LENGTH } from "./password";
+import { enforce } from "./rateLimit";
+import type { TrpcContext } from "./_core/context";
+
+/**
+ * Who to count sign-ups and sign-in attempts against, when there is no
+ * account yet. Behind a proxy the socket address is the proxy's, so the
+ * forwarded header comes first — its leftmost entry is the original caller.
+ */
+function callerAddress(ctx: TrpcContext): string {
+  const forwarded = ctx.req?.headers?.["x-forwarded-for"];
+  const first = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  if (first) return first.split(",")[0].trim();
+  return ctx.req?.socket?.remoteAddress ?? "unknown";
+}
 
 /** Surface rule violations as 4xx codes with their message intact. */
 async function enforcingRules<T>(fn: () => Promise<T>): Promise<T> {
@@ -78,6 +92,11 @@ export const accountsRouter = router({
     )
     .mutation(async ({ ctx, input }) =>
       enforcingRules(async () => {
+        // No user to count against yet, so this counts against the address —
+        // enough to stop a script making a thousand accounts, loose enough
+        // that a household or an office behind one address is unaffected.
+        enforce("signUp", callerAddress(ctx));
+
         const { user, openId } = await accountsDb.signUp({
           username: input.username,
           password: input.password,
@@ -102,6 +121,9 @@ export const accountsRouter = router({
   signIn: publicProcedure
     .input(z.object({ username: usernameInput, password: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
+      // Guessing passwords is only worth doing quickly.
+      enforce("signIn", callerAddress(ctx));
+
       const result = await accountsDb.signIn(input.username, input.password);
       if (!result) {
         // Same message either way — never reveal which half was wrong.
@@ -151,6 +173,11 @@ export const accountsRouter = router({
     )
     .mutation(async ({ ctx, input }) =>
       enforcingRules(async () => {
+        // No user to count against yet, so this counts against the address —
+        // enough to stop a script making a thousand accounts, loose enough
+        // that a household or an office behind one address is unaffected.
+        enforce("signUp", callerAddress(ctx));
+
         const account = await accountsDb.claimUsername(
           ctx.user.id,
           input.username,
@@ -182,6 +209,11 @@ export const accountsRouter = router({
     .input(z.object({ bio: z.string().max(200).optional() }))
     .mutation(async ({ ctx, input }) =>
       enforcingRules(async () => {
+        // No user to count against yet, so this counts against the address —
+        // enough to stop a script making a thousand accounts, loose enough
+        // that a household or an office behind one address is unaffected.
+        enforce("signUp", callerAddress(ctx));
+
         const existing = await accountsDb.getAccountByUserId(ctx.user.id);
         if (!existing) {
           throw new outfitsDb.OutfitRuleError(
@@ -208,6 +240,11 @@ export const accountsRouter = router({
     )
     .mutation(async ({ ctx, input }) =>
       enforcingRules(async () => {
+        // No user to count against yet, so this counts against the address —
+        // enough to stop a script making a thousand accounts, loose enough
+        // that a household or an office behind one address is unaffected.
+        enforce("signUp", callerAddress(ctx));
+
         const existing = await accountsDb.getAccountByUserId(ctx.user.id);
         if (!existing) {
           throw new outfitsDb.OutfitRuleError(
@@ -239,6 +276,11 @@ export const accountsRouter = router({
     .input(z.object({ password: passwordInput }))
     .mutation(async ({ ctx, input }) =>
       enforcingRules(async () => {
+        // No user to count against yet, so this counts against the address —
+        // enough to stop a script making a thousand accounts, loose enough
+        // that a household or an office behind one address is unaffected.
+        enforce("signUp", callerAddress(ctx));
+
         const existing = await accountsDb.getAccountByUserId(ctx.user.id);
         if (!existing) {
           throw new outfitsDb.OutfitRuleError(

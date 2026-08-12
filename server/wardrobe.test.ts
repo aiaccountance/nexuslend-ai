@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeAll } from "vitest";
+import { describe, expect, it, vi, beforeAll, beforeEach } from "vitest";
 
 vi.mock("./storage", () => ({
   storagePut: vi.fn().mockImplementation(async (key: string) => ({
@@ -25,6 +25,7 @@ vi.mock("./_core/imageGeneration", () => ({
 }));
 
 import { appRouter } from "./routers";
+import { resetAllLimits } from "./rateLimit";
 import type { TrpcContext } from "./_core/context";
 import type { User } from "../drizzle/schema";
 import * as db from "./db";
@@ -90,6 +91,11 @@ beforeAll(async () => {
     dbAvailable = false;
   }
 });
+
+// These suites upload far more than a person would in an hour; the
+// allowance is cleared between tests so a later one fails for its own
+// reasons rather than for running out of quota.
+beforeEach(() => resetAllLimits());
 
 const dbIt: typeof it = ((name: string, fn: never, timeout?: number) =>
   it(
