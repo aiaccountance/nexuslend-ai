@@ -7,6 +7,10 @@ import { invokeGroq } from "./_core/groqLlm";
 import { storagePut } from "./storage";
 import { z } from "zod";
 import * as db from "./db";
+import { outfitsRouter } from "./outfitsRouter";
+import { wardrobeRouter } from "./wardrobeRouter";
+import { accountsRouter } from "./accountsRouter";
+import { arenaRouter } from "./arenaRouter";
 import https from "https";
 import { PDFParse } from "pdf-parse";
 
@@ -774,6 +778,10 @@ OUTPUT FORMAT — return ONLY valid JSON, no markdown outside JSON:
 
 export const appRouter = router({
   system: systemRouter,
+  outfits: outfitsRouter,
+  wardrobe: wardrobeRouter,
+  accounts: accountsRouter,
+  arena: arenaRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

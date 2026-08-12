@@ -1,9 +1,12 @@
+import { sql } from "drizzle-orm";
 import {
+  index,
   int,
   mysqlEnum,
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
   decimal,
   boolean,
@@ -36,8 +39,19 @@ export const deals = mysqlTable("deals", {
   loanType: varchar("loanType", { length: 100 }).notNull(),
   loanTermMonths: int("loanTermMonths"),
   sector: varchar("sector", { length: 100 }),
-  status: mysqlEnum("status", ["pending", "analysing", "complete", "flagged", "declined", "approved"]).default("pending").notNull(),
-  priority: mysqlEnum("priority", ["low", "medium", "high"]).default("medium").notNull(),
+  status: mysqlEnum("status", [
+    "pending",
+    "analysing",
+    "complete",
+    "flagged",
+    "declined",
+    "approved",
+  ])
+    .default("pending")
+    .notNull(),
+  priority: mysqlEnum("priority", ["low", "medium", "high"])
+    .default("medium")
+    .notNull(),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -77,18 +91,38 @@ export const portfolioLoans = mysqlTable("portfolio_loans", {
   dealId: int("dealId"),
   companyName: varchar("companyName", { length: 255 }).notNull(),
   loanAmount: decimal("loanAmount", { precision: 12, scale: 2 }).notNull(),
-  outstandingBalance: decimal("outstandingBalance", { precision: 12, scale: 2 }).notNull(),
-  monthlyRepayment: decimal("monthlyRepayment", { precision: 10, scale: 2 }).notNull(),
+  outstandingBalance: decimal("outstandingBalance", {
+    precision: 12,
+    scale: 2,
+  }).notNull(),
+  monthlyRepayment: decimal("monthlyRepayment", {
+    precision: 10,
+    scale: 2,
+  }).notNull(),
   interestRate: decimal("interestRate", { precision: 5, scale: 2 }).notNull(),
   startDate: timestamp("startDate").notNull(),
   maturityDate: timestamp("maturityDate").notNull(),
   sector: varchar("sector", { length: 100 }),
-  status: mysqlEnum("status", ["current", "watch", "arrears", "default", "redeemed"]).default("current").notNull(),
-  riskRating: mysqlEnum("riskRating", ["green", "amber", "red"]).default("green").notNull(),
+  status: mysqlEnum("status", [
+    "current",
+    "watch",
+    "arrears",
+    "default",
+    "redeemed",
+  ])
+    .default("current")
+    .notNull(),
+  riskRating: mysqlEnum("riskRating", ["green", "amber", "red"])
+    .default("green")
+    .notNull(),
   lastMonitoredAt: timestamp("lastMonitoredAt"),
   earlyWarningFlags: json("earlyWarningFlags"),
   revenueLastMonth: decimal("revenueLastMonth", { precision: 12, scale: 2 }),
-  revenueTrend: mysqlEnum("revenueTrend", ["improving", "stable", "declining"]).default("stable"),
+  revenueTrend: mysqlEnum("revenueTrend", [
+    "improving",
+    "stable",
+    "declining",
+  ]).default("stable"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -102,7 +136,12 @@ export const fraudChecks = mysqlTable("fraud_checks", {
   dealId: int("dealId").notNull(),
   userId: int("userId").notNull(),
   checkType: varchar("checkType", { length: 100 }).notNull(),
-  result: mysqlEnum("result", ["PASS", "FLAG", "ALERT", "REQUIRES_LIVE_API"]).notNull(),
+  result: mysqlEnum("result", [
+    "PASS",
+    "FLAG",
+    "ALERT",
+    "REQUIRES_LIVE_API",
+  ]).notNull(),
   details: text("details"),
   riskScore: int("riskScore").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -116,9 +155,23 @@ export const policyRules = mysqlTable("policy_rules", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   ruleName: varchar("ruleName", { length: 255 }).notNull(),
-  ruleType: mysqlEnum("ruleType", ["auto_decline", "auto_approve", "flag_review", "pricing", "condition"]).notNull(),
+  ruleType: mysqlEnum("ruleType", [
+    "auto_decline",
+    "auto_approve",
+    "flag_review",
+    "pricing",
+    "condition",
+  ]).notNull(),
   field: varchar("field", { length: 100 }).notNull(),
-  operator: mysqlEnum("operator", ["gt", "lt", "gte", "lte", "eq", "neq", "contains"]).notNull(),
+  operator: mysqlEnum("operator", [
+    "gt",
+    "lt",
+    "gte",
+    "lte",
+    "eq",
+    "neq",
+    "contains",
+  ]).notNull(),
   value: varchar("value", { length: 255 }).notNull(),
   action: text("action").notNull(),
   isActive: boolean("isActive").default(true).notNull(),
@@ -157,7 +210,14 @@ export const openBankingConnections = mysqlTable("open_banking_connections", {
   dealId: int("dealId").notNull(),
   userId: int("userId").notNull(),
   bankName: varchar("bankName", { length: 100 }),
-  connectionStatus: mysqlEnum("connectionStatus", ["pending", "connected", "expired", "revoked"]).default("pending").notNull(),
+  connectionStatus: mysqlEnum("connectionStatus", [
+    "pending",
+    "connected",
+    "expired",
+    "revoked",
+  ])
+    .default("pending")
+    .notNull(),
   consentExpiresAt: timestamp("consentExpiresAt"),
   transactionDataJson: json("transactionDataJson"),
   monthlyRevenueJson: json("monthlyRevenueJson"),
@@ -169,7 +229,8 @@ export const openBankingConnections = mysqlTable("open_banking_connections", {
 });
 
 export type OpenBankingConnection = typeof openBankingConnections.$inferSelect;
-export type InsertOpenBankingConnection = typeof openBankingConnections.$inferInsert;
+export type InsertOpenBankingConnection =
+  typeof openBankingConnections.$inferInsert;
 
 // ─── Early Access Waitlist ───────────────────────────────────────────────────────────────────────────────
 export const waitlist = mysqlTable("waitlist", {
@@ -184,3 +245,386 @@ export const waitlist = mysqlTable("waitlist", {
 
 export type Waitlist = typeof waitlist.$inferSelect;
 export type InsertWaitlist = typeof waitlist.$inferInsert;
+// ─── Outfit Arena — outfit posts ─────────────────────────────────────────────
+export const outfitPosts = mysqlTable("outfit_posts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  caption: text("caption"),
+  category: mysqlEnum("category", [
+    "casual",
+    "streetwear",
+    "formal",
+    "athletic",
+    "vintage",
+    "other",
+  ])
+    .default("other")
+    .notNull(),
+  aiTags: json("aiTags"),
+  aiStyleScore: int("aiStyleScore"),
+  aiOccasion: varchar("aiOccasion", { length: 255 }),
+  aiFeedback: text("aiFeedback"),
+  aiSuggestions: json("aiSuggestions"),
+  eloRating: int("eloRating").default(1200).notNull(),
+  battleWins: int("battleWins").default(0).notNull(),
+  battleLosses: int("battleLosses").default(0).notNull(),
+  ratingSum: int("ratingSum").default(0).notNull(),
+  ratingCount: int("ratingCount").default(0).notNull(),
+  // The star average, kept by the database rather than worked out on every
+  // read. "Best first" is one of three ways the feed is sorted, and a sort on
+  // a sum divided by a count cannot use an index — so at twenty thousand
+  // posts it read and sorted every row. This one can be indexed.
+  // Zero rather than null for an unrated post: it sorts to the bottom either
+  // way, and a value that is never null is one a page cursor can walk without
+  // falling off the end of the ratings and into the blanks. Left nullable in
+  // the type because MariaDB and MySQL disagree about where NOT NULL goes on
+  // a generated column — the COALESCE is what actually guarantees it.
+  ratingAvg: decimal("ratingAvg", { precision: 6, scale: 3 })
+    .generatedAlwaysAs(
+      sql`(COALESCE(\`ratingSum\` / NULLIF(\`ratingCount\`, 0), 0))`,
+      { mode: "stored" }
+    ),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  // The feed is always "newest first" or "best first", optionally narrowed to
+  // one category or one person. Without these the database reads every row and
+  // sorts the lot on every page load.
+  newest: index("outfit_posts_createdAt_idx").on(table.createdAt),
+  best: index("outfit_posts_eloRating_idx").on(table.eloRating),
+  rated: index("outfit_posts_ratingAvg_idx").on(table.ratingAvg),
+  byAuthor: index("outfit_posts_userId_idx").on(table.userId),
+  byCategory: index("outfit_posts_category_createdAt_idx").on(
+    table.category,
+    table.createdAt
+  ),
+  // Covers the stylist board outright, so it groups straight off the index
+  // instead of fetching every row it counts.
+  standings: index("outfit_posts_standings_idx").on(
+    table.createdAt,
+    table.userId,
+    table.eloRating,
+    table.battleWins
+  ),
+}));
+
+export type OutfitPost = typeof outfitPosts.$inferSelect;
+export type InsertOutfitPost = typeof outfitPosts.$inferInsert;
+
+// ─── Outfit Arena — star ratings (1 per user per post) ───────────────────────
+export const outfitRatings = mysqlTable("outfit_ratings", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),
+  userId: int("userId").notNull(),
+  rating: int("rating").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  // "has this person already rated this post" runs on every feed card.
+  byPostAndUser: index("outfit_ratings_postId_userId_idx").on(
+    table.postId,
+    table.userId
+  ),
+}));
+// Note: one rating per (postId, userId) is enforced in the application layer
+// (server/outfitsDb.ts rateOutfitPost does a find-then-update-or-insert), not
+// via a DB constraint, to keep this additive to the existing schema.
+
+export type OutfitRating = typeof outfitRatings.$inferSelect;
+export type InsertOutfitRating = typeof outfitRatings.$inferInsert;
+
+// ─── Outfit Arena — head-to-head battle log ──────────────────────────────────
+export const outfitMatchups = mysqlTable("outfit_matchups", {
+  id: int("id").autoincrement().primaryKey(),
+  postAId: int("postAId").notNull(),
+  postBId: int("postBId").notNull(),
+  winnerId: int("winnerId").notNull(),
+  voterUserId: int("voterUserId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  byVoter: index("outfit_matchups_voterUserId_idx").on(table.voterUserId),
+}));
+
+export type OutfitMatchup = typeof outfitMatchups.$inferSelect;
+export type InsertOutfitMatchup = typeof outfitMatchups.$inferInsert;
+
+// ─── Outfit Arena — follows ───────────────────────────────────────────────────
+export const outfitFollows = mysqlTable("outfit_follows", {
+  id: int("id").autoincrement().primaryKey(),
+  followerId: int("followerId").notNull(),
+  followingId: int("followingId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  // Both directions are read: "who do I follow" and "who follows them".
+  following: index("outfit_follows_followerId_idx").on(table.followerId),
+  followers: index("outfit_follows_followingId_idx").on(table.followingId),
+}));
+
+export type OutfitFollow = typeof outfitFollows.$inferSelect;
+export type InsertOutfitFollow = typeof outfitFollows.$inferInsert;
+
+// ─── Outfit Arena — comments on posts ────────────────────────────────────────
+export const outfitComments = mysqlTable("outfit_comments", {
+  id: int("id").autoincrement().primaryKey(),
+  postId: int("postId").notNull(),
+  userId: int("userId").notNull(),
+  body: varchar("body", { length: 500 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  byPost: index("outfit_comments_postId_idx").on(table.postId, table.createdAt),
+}));
+
+export type OutfitComment = typeof outfitComments.$inferSelect;
+export type InsertOutfitComment = typeof outfitComments.$inferInsert;
+
+// ─── Wardrobe — individual garments a user owns ──────────────────────────────
+export const wardrobeItems = mysqlTable("wardrobe_items", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  // A generated version of the photo on a clean studio backdrop. Null when
+  // generation failed or has not run — always fall back to imageUrl.
+  cleanImageUrl: varchar("cleanImageUrl", { length: 512 }),
+  cleanImageKey: varchar("cleanImageKey", { length: 512 }),
+  name: varchar("name", { length: 160 }).notNull(),
+  slot: mysqlEnum("slot", [
+    "top",
+    "bottom",
+    "outerwear",
+    "shoes",
+    "accessory",
+    "dress",
+  ]).notNull(),
+  colour: varchar("colour", { length: 80 }),
+  aiTags: json("aiTags"),
+  aiNotes: text("aiNotes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  // The closet is read as "everything I own", sometimes one drawer at a time.
+  byOwner: index("wardrobe_items_userId_slot_idx").on(table.userId, table.slot),
+}));
+
+export type WardrobeItem = typeof wardrobeItems.$inferSelect;
+export type InsertWardrobeItem = typeof wardrobeItems.$inferInsert;
+
+// ─── Wardrobe — outfits composed from wardrobe items ─────────────────────────
+export const wardrobeOutfits = mysqlTable("wardrobe_outfits", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  name: varchar("name", { length: 160 }).notNull(),
+  itemIds: json("itemIds").notNull(),
+  occasion: varchar("occasion", { length: 160 }),
+  aiRationale: text("aiRationale"),
+  aiScore: int("aiScore"),
+  source: mysqlEnum("source", ["ai", "manual"]).default("manual").notNull(),
+  // A generated image of the outfit being worn.
+  renderImageUrl: varchar("renderImageUrl", { length: 512 }),
+  renderImageKey: varchar("renderImageKey", { length: 512 }),
+  renderStyle: mysqlEnum("renderStyle", ["mannequin", "personal"]),
+  // Set once this outfit has been published into the competition feed.
+  postedPostId: int("postedPostId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => ({
+  byOwner: index("wardrobe_outfits_userId_idx").on(table.userId),
+}));
+
+export type WardrobeOutfit = typeof wardrobeOutfits.$inferSelect;
+export type InsertWardrobeOutfit = typeof wardrobeOutfits.$inferInsert;
+
+// ─── Wardrobe — the user's own photo, used to render outfits on them ─────────
+// One per user. `consentedAt` records that they confirmed the photo is of
+// themselves; without it no personal render is produced.
+export const wardrobeModels = mysqlTable("wardrobe_models", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  imageUrl: varchar("imageUrl", { length: 512 }).notNull(),
+  imageKey: varchar("imageKey", { length: 512 }).notNull(),
+  consentedAt: timestamp("consentedAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WardrobeModel = typeof wardrobeModels.$inferSelect;
+export type InsertWardrobeModel = typeof wardrobeModels.$inferInsert;
+
+// ─── Outfit Arena accounts ────────────────────────────────────────────────────
+// Outfit Arena has its own identity: a handle people are known by, and a
+// password so they can sign up without going through the lending product's
+// sign-in. It hangs off `users` rather than adding columns to it, so the
+// lending side is untouched and an account here is always removable.
+//
+// `passwordHash` is null for someone who arrived through the existing sign-in
+// and only claimed a handle — they keep signing in the way they already do.
+export const outfitAccounts = mysqlTable("outfit_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // Stored lowercase; `displayUsername` keeps the capitalisation they chose.
+  username: varchar("username", { length: 30 }).notNull().unique(),
+  displayUsername: varchar("displayUsername", { length: 30 }).notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }),
+  bio: varchar("bio", { length: 200 }),
+  avatarUrl: varchar("avatarUrl", { length: 512 }),
+  avatarKey: varchar("avatarKey", { length: 512 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OutfitAccount = typeof outfitAccounts.$inferSelect;
+export type InsertOutfitAccount = typeof outfitAccounts.$inferInsert;
+
+// ─── The figure someone's outfits are shown on ────────────────────────────────
+// Deliberately a set of choices rather than a generated picture. A drawn figure
+// with the proportions and skin tone someone picked is instant, free, identical
+// every time, and reads as a design choice; a generated body reads as a failed
+// photograph. One row per person, created the first time they open the styler.
+export const outfitAvatars = mysqlTable("outfit_avatars", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().unique(),
+  // Index into the app's skin tone ramp, kept as a name so the palette can be
+  // re-tuned without rewriting everyone's saved choice.
+  skinTone: mysqlEnum("skinTone", [
+    "porcelain",
+    "fair",
+    "light",
+    "medium",
+    "tan",
+    "bronze",
+    "deep",
+    "rich",
+  ])
+    .default("medium")
+    .notNull(),
+  bodyShape: mysqlEnum("bodyShape", [
+    "slim",
+    "straight",
+    "athletic",
+    "curvy",
+    "full",
+  ])
+    .default("straight")
+    .notNull(),
+  height: mysqlEnum("height", ["petite", "average", "tall"])
+    .default("average")
+    .notNull(),
+  hairStyle: mysqlEnum("hairStyle", [
+    "none",
+    "short",
+    "medium",
+    "long",
+    "curly",
+    "afro",
+    "bun",
+  ])
+    .default("short")
+    .notNull(),
+  hairColor: mysqlEnum("hairColor", [
+    "black",
+    "brown",
+    "blonde",
+    "auburn",
+    "red",
+    "grey",
+    "dyed",
+  ])
+    .default("brown")
+    .notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type OutfitAvatar = typeof outfitAvatars.$inferSelect;
+export type InsertOutfitAvatar = typeof outfitAvatars.$inferInsert;
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+// One row per thing that happened to someone: their outfit was rated, someone
+// followed them, a battle went their way. `actorId` is who did it, and is null
+// for things the app itself decides, like winning the week.
+//
+// The text is written when the row is created rather than rendered later, so a
+// notification still reads correctly after the post it refers to is deleted.
+export const outfitNotifications = mysqlTable(
+  "outfit_notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    actorId: int("actorId"),
+    kind: mysqlEnum("kind", [
+      "rating",
+      "comment",
+      "follow",
+      "battle_won",
+      "battle_lost",
+      "challenge_won",
+      "weekly_winner",
+    ]).notNull(),
+    postId: int("postId"),
+    challengeId: int("challengeId"),
+    body: varchar("body", { length: 300 }).notNull(),
+    readAt: timestamp("readAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // "my notifications, newest first" and "how many are unread" are the only
+    // two questions ever asked of this table.
+    inbox: index("outfit_notifications_userId_createdAt_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    unread: index("outfit_notifications_userId_readAt_idx").on(
+      table.userId,
+      table.readAt
+    ),
+  })
+);
+
+export type OutfitNotification = typeof outfitNotifications.$inferSelect;
+export type InsertOutfitNotification = typeof outfitNotifications.$inferInsert;
+
+// ─── Weekly challenges ────────────────────────────────────────────────────────
+// A themed competition with a deadline. Entries point at posts that already
+// exist, so entering a challenge never means uploading the same outfit twice.
+export const outfitChallenges = mysqlTable(
+  "outfit_challenges",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    slug: varchar("slug", { length: 80 }).notNull().unique(),
+    title: varchar("title", { length: 120 }).notNull(),
+    prompt: varchar("prompt", { length: 400 }).notNull(),
+    startsAt: timestamp("startsAt").notNull(),
+    endsAt: timestamp("endsAt").notNull(),
+    // Set when the challenge closes and the winner is worked out.
+    winnerPostId: int("winnerPostId"),
+    settledAt: timestamp("settledAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    running: index("outfit_challenges_endsAt_idx").on(table.endsAt),
+  })
+);
+
+export type OutfitChallenge = typeof outfitChallenges.$inferSelect;
+export type InsertOutfitChallenge = typeof outfitChallenges.$inferInsert;
+
+export const outfitChallengeEntries = mysqlTable(
+  "outfit_challenge_entries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    challengeId: int("challengeId").notNull(),
+    postId: int("postId").notNull(),
+    userId: int("userId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // A post can only be entered into a challenge once.
+    once: uniqueIndex("outfit_challenge_entries_challengeId_postId_idx").on(
+      table.challengeId,
+      table.postId
+    ),
+    byEntrant: index("outfit_challenge_entries_userId_idx").on(table.userId),
+  })
+);
+
+export type OutfitChallengeEntry = typeof outfitChallengeEntries.$inferSelect;
+export type InsertOutfitChallengeEntry =
+  typeof outfitChallengeEntries.$inferInsert;

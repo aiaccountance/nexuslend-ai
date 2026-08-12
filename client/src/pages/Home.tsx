@@ -1535,6 +1535,9 @@ export default function Home() {
               NexusLend AI is a decision-support tool. All lending decisions must be independently verified by a qualified underwriter. AI outputs do not constitute financial advice.
             </div>
             {/* Fix 2: Social links removed — no placeholder links */}
+            <a href="/outfits" className="text-xs text-[#3a5a3a] hover:text-[#39ff14] transition-colors">
+              Outfit Arena →
+            </a>
           </div>
         </div>
       </footer>
