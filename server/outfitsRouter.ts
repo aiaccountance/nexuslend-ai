@@ -215,13 +215,30 @@ export const outfitsRouter = router({
       z.object({
         sort: SORT_ENUM.default("new"),
         limit: z.number().min(1).max(50).default(24),
-        offset: z.number().min(0).default(0),
+        // Where the last page stopped. Absent means start at the beginning.
+        cursor: z
+          .object({ value: z.string(), id: z.number() })
+          .nullish(),
         category: CATEGORY_ENUM.optional(),
       })
     )
     .query(async ({ input }) => {
-      const rows = await outfitsDb.listOutfitFeed(input);
-      return rows.map(withAvgRating);
+      const rows = await outfitsDb.listOutfitFeed({
+        sort: input.sort,
+        limit: input.limit,
+        cursor: input.cursor ?? undefined,
+        category: input.category,
+      });
+      const last = rows[rows.length - 1];
+      return {
+        posts: rows.map(withAvgRating),
+        // Null once a page comes back short, which is how the client knows
+        // there is nothing more to ask for.
+        nextCursor:
+          last && rows.length === input.limit
+            ? outfitsDb.cursorAfter(input.sort, last.post)
+            : null,
+      };
     }),
 
   getPost: publicProcedure

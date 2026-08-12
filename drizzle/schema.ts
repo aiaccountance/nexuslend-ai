@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   index,
   int,
@@ -271,6 +272,20 @@ export const outfitPosts = mysqlTable("outfit_posts", {
   battleLosses: int("battleLosses").default(0).notNull(),
   ratingSum: int("ratingSum").default(0).notNull(),
   ratingCount: int("ratingCount").default(0).notNull(),
+  // The star average, kept by the database rather than worked out on every
+  // read. "Best first" is one of three ways the feed is sorted, and a sort on
+  // a sum divided by a count cannot use an index — so at twenty thousand
+  // posts it read and sorted every row. This one can be indexed.
+  // Zero rather than null for an unrated post: it sorts to the bottom either
+  // way, and a value that is never null is one a page cursor can walk without
+  // falling off the end of the ratings and into the blanks. Left nullable in
+  // the type because MariaDB and MySQL disagree about where NOT NULL goes on
+  // a generated column — the COALESCE is what actually guarantees it.
+  ratingAvg: decimal("ratingAvg", { precision: 6, scale: 3 })
+    .generatedAlwaysAs(
+      sql`(COALESCE(\`ratingSum\` / NULLIF(\`ratingCount\`, 0), 0))`,
+      { mode: "stored" }
+    ),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => ({
   // The feed is always "newest first" or "best first", optionally narrowed to
@@ -278,10 +293,19 @@ export const outfitPosts = mysqlTable("outfit_posts", {
   // sorts the lot on every page load.
   newest: index("outfit_posts_createdAt_idx").on(table.createdAt),
   best: index("outfit_posts_eloRating_idx").on(table.eloRating),
+  rated: index("outfit_posts_ratingAvg_idx").on(table.ratingAvg),
   byAuthor: index("outfit_posts_userId_idx").on(table.userId),
   byCategory: index("outfit_posts_category_createdAt_idx").on(
     table.category,
     table.createdAt
+  ),
+  // Covers the stylist board outright, so it groups straight off the index
+  // instead of fetching every row it counts.
+  standings: index("outfit_posts_standings_idx").on(
+    table.createdAt,
+    table.userId,
+    table.eloRating,
+    table.battleWins
   ),
 }));
 

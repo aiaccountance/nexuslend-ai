@@ -67,29 +67,51 @@ export async function getOutfitPostById(id: number) {
 
 export type OutfitFeedSort = "new" | "top" | "trending";
 
+/**
+ * Where the last page stopped.
+ *
+ * `value` is whatever the feed is sorted by — a date, a rating, a score — and
+ * `id` breaks ties between posts that share it. Together they name an exact
+ * position in the order, which is what lets the next page start from there.
+ */
+export type FeedCursor = { value: string; id: number };
+
+/**
+ * A page of the feed.
+ *
+ * Paging by cursor rather than by "skip the first N": skipping means the
+ * database walks and throws away everything before the page, so page fifty
+ * costs fifty times page one. Naming the last post seen costs the same on
+ * every page, however deep.
+ */
 export async function listOutfitFeed(opts: {
   sort: OutfitFeedSort;
   limit: number;
-  offset: number;
+  offset?: number;
+  cursor?: FeedCursor;
   category?: OutfitCategory;
   userId?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
-  const { sort, limit, offset, category, userId } = opts;
+  const { sort, limit, offset = 0, cursor, category, userId } = opts;
+
+  const sortColumn =
+    sort === "top"
+      ? outfitPosts.ratingAvg
+      : sort === "trending"
+        ? outfitPosts.eloRating
+        : outfitPosts.createdAt;
 
   const conditions = [];
   if (category) conditions.push(eq(outfitPosts.category, category));
   if (userId) conditions.push(eq(outfitPosts.userId, userId));
-
-  const orderBy =
-    sort === "top"
-      ? desc(
-          sql`(${outfitPosts.ratingSum} / NULLIF(${outfitPosts.ratingCount}, 0))`
-        )
-      : sort === "trending"
-        ? desc(outfitPosts.eloRating)
-        : desc(outfitPosts.createdAt);
+  if (cursor) {
+    // Everything strictly after the last post seen, in this order.
+    conditions.push(
+      sql`(${sortColumn} < ${cursor.value} OR (${sortColumn} = ${cursor.value} AND ${outfitPosts.id} < ${cursor.id}))`
+    );
+  }
 
   const query = db
     .select({
@@ -102,14 +124,38 @@ export async function listOutfitFeed(opts: {
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
-    .orderBy(orderBy)
+    .orderBy(desc(sortColumn), desc(outfitPosts.id))
     .limit(limit)
-    .offset(offset);
+    .offset(cursor ? 0 : offset);
 
   if (conditions.length > 0) {
     return query.where(and(...conditions));
   }
   return query;
+}
+
+/** The cursor that would fetch the page after this one. */
+export function cursorAfter(
+  sort: OutfitFeedSort,
+  post: {
+    id: number;
+    createdAt: Date;
+    eloRating: number;
+    ratingAvg: string | null;
+  }
+): FeedCursor {
+  const value =
+    sort === "top"
+      ? (post.ratingAvg ?? "0")
+      : sort === "trending"
+        ? String(post.eloRating)
+        : toSqlTime(post.createdAt);
+  return { value, id: post.id };
+}
+
+/** A date in the form the database compares against a DATETIME column. */
+function toSqlTime(at: Date): string {
+  return new Date(at).toISOString().slice(0, 19).replace("T", " ");
 }
 
 export async function deleteOutfitPost(id: number, userId: number) {
@@ -188,18 +234,65 @@ export async function getUserRatingForPost(postId: number, userId: number) {
  * Voters never judge their own outfits, so exclude them from the draw rather
  * than serving a matchup the vote endpoint would then reject.
  */
+/**
+ * Two outfits to put against each other.
+ *
+ * Not `ORDER BY RAND()` — that shuffles every post ever made to pick two, and
+ * at twenty thousand posts it was the slowest thing in the app by a distance.
+ * This jumps to a random point in the table by id and takes what it finds
+ * from there. Ids left behind by deleted posts make the draw very slightly
+ * uneven, which matters not at all for choosing a pair to look at.
+ */
 export async function getRandomMatchupPair(excludeUserId?: number) {
   const db = await getDb();
   if (!db) return [];
-  const query = db
-    .select()
-    .from(outfitPosts)
-    .orderBy(sql`RAND()`)
-    .limit(2);
-  if (excludeUserId !== undefined) {
-    return query.where(ne(outfitPosts.userId, excludeUserId));
+
+  const [bounds] = await db
+    .select({
+      lowest: sql<number>`MIN(${outfitPosts.id})`,
+      highest: sql<number>`MAX(${outfitPosts.id})`,
+    })
+    .from(outfitPosts);
+  if (!bounds?.highest) return [];
+
+  const low = Number(bounds.lowest);
+  const high = Number(bounds.highest);
+  const notMine =
+    excludeUserId === undefined
+      ? undefined
+      : ne(outfitPosts.userId, excludeUserId);
+
+  const pickFrom = async (fromId: number) => {
+    const where = notMine
+      ? and(sql`${outfitPosts.id} >= ${fromId}`, notMine)
+      : sql`${outfitPosts.id} >= ${fromId}`;
+    const rows = await db
+      .select()
+      .from(outfitPosts)
+      .where(where)
+      .orderBy(outfitPosts.id)
+      .limit(1);
+    if (rows[0]) return rows[0];
+    // Past the end — wrap round to the beginning.
+    const wrapped = await db
+      .select()
+      .from(outfitPosts)
+      .where(notMine ?? sql`1 = 1`)
+      .orderBy(outfitPosts.id)
+      .limit(1);
+    return wrapped[0];
+  };
+
+  const somewhere = () => low + Math.floor(Math.random() * (high - low + 1));
+  const first = await pickFrom(somewhere());
+  if (!first) return [];
+
+  // Try a few times rather than loop forever on a table with one usable post.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const second = await pickFrom(somewhere());
+    if (second && second.id !== first.id) return [first, second];
   }
-  return query;
+  return [first];
 }
 
 /** Unordered pair key, so (A,B) and (B,A) count as the same matchup. */
@@ -403,36 +496,53 @@ export async function leaderboardUsers(
   const db = await getDb();
   if (!db) return [];
   const cutoff = periodCutoff(period);
-  return db
+
+  // Two steps on purpose. Grouping by the person and their name and their
+  // handle and their avatar all at once builds a temporary table as wide as
+  // the profile; grouping by the person alone builds one as wide as a number,
+  // and the twenty names are then looked up by primary key. Same answer, and
+  // it stopped being the slowest query here.
+  const standings = await db
     .select({
       userId: outfitPosts.userId,
-      authorName: users.name,
-      authorUsername: outfitAccounts.username,
-      authorDisplayUsername: outfitAccounts.displayUsername,
-      authorAvatarUrl: outfitAccounts.avatarUrl,
       postCount: sql<number>`COUNT(${outfitPosts.id})`,
       totalWins: sql<number>`COALESCE(SUM(${outfitPosts.battleWins}), 0)`,
       avgElo: sql<number>`AVG(${outfitPosts.eloRating})`,
     })
     .from(outfitPosts)
-    .leftJoin(users, eq(users.id, outfitPosts.userId))
-    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .where(sql`${outfitPosts.createdAt} >= ${cutoff}`)
-    // Every non-aggregated column has to be grouped, or strict SQL mode
-    // rejects the query outright.
-    .groupBy(
-      outfitPosts.userId,
-      users.name,
-      users.openId,
-      outfitAccounts.username,
-      outfitAccounts.displayUsername,
-      outfitAccounts.avatarUrl
-    )
-    .having(
-      sql`COUNT(${outfitPosts.id}) >= ${MIN_POSTS_FOR_STYLIST_BOARD}`
-    )
+    .groupBy(outfitPosts.userId)
+    .having(sql`COUNT(${outfitPosts.id}) >= ${MIN_POSTS_FOR_STYLIST_BOARD}`)
     .orderBy(desc(sql`AVG(${outfitPosts.eloRating})`))
     .limit(limit);
+
+  if (standings.length === 0) return [];
+
+  const ids = standings.map(row => row.userId);
+  const people = await db
+    .select({
+      userId: users.id,
+      authorName: users.name,
+      authorUsername: outfitAccounts.username,
+      authorDisplayUsername: outfitAccounts.displayUsername,
+      authorAvatarUrl: outfitAccounts.avatarUrl,
+    })
+    .from(users)
+    .leftJoin(outfitAccounts, eq(outfitAccounts.userId, users.id))
+    .where(inArray(users.id, ids));
+
+  const byId = new Map(people.map(person => [person.userId, person]));
+  return standings.map(row => ({
+    userId: row.userId,
+    postCount: row.postCount,
+    totalWins: row.totalWins,
+    avgElo: row.avgElo,
+    authorName: byId.get(row.userId)?.authorName ?? null,
+    authorUsername: byId.get(row.userId)?.authorUsername ?? null,
+    authorDisplayUsername:
+      byId.get(row.userId)?.authorDisplayUsername ?? null,
+    authorAvatarUrl: byId.get(row.userId)?.authorAvatarUrl ?? null,
+  }));
 }
 
 // ─── Profiles ─────────────────────────────────────────────────────────────────

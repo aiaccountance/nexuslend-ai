@@ -71,6 +71,13 @@
       "when": 1786491627895,
       "tag": "0009_magenta_azazel",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1786553391296,
+      "tag": "0010_friendly_mathemanic",
+      "breakpoints": true
     }
   ]
 }

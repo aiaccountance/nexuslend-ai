@@ -17,6 +17,9 @@ import { outfitAccounts, outfitPosts, users } from "../drizzle/schema";
 
 const MAX_RESULTS = 24;
 
+/** How far back "what people are wearing at the moment" reaches. */
+const RECENT_DAYS = 30;
+
 /** Nothing shorter is worth running — it would match half the table. */
 export const MIN_QUERY_LENGTH = 2;
 
@@ -95,9 +98,14 @@ export async function postsByCategory(
 export async function trendingTags(limit = 12): Promise<string[]> {
   const db = await getDb();
   if (!db) return [];
+  // Bounded by date as well as by count. Without the date the database has no
+  // reason to use the index on it — the tags are a JSON blob, so it decided
+  // reading and sorting every row was cheaper than looking each one up.
+  const since = new Date(Date.now() - RECENT_DAYS * 86_400_000);
   const rows = await db
     .select({ tags: outfitPosts.aiTags })
     .from(outfitPosts)
+    .where(sql`${outfitPosts.createdAt} >= ${since}`)
     .orderBy(desc(outfitPosts.createdAt))
     .limit(400);
 

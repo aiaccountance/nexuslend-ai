@@ -195,8 +195,8 @@ describe("outfits.feed", () => {
       const caller = appRouter.createCaller(ctxFor(null));
       const feed = await caller.outfits.feed({ sort: "new", limit: 30 });
 
-      expect(feed.length).toBeGreaterThan(0);
-      const found = feed.find(f => f.post.id === created.post!.post.id);
+      expect(feed.posts.length).toBeGreaterThan(0);
+      const found = feed.posts.find(f => f.post.id === created.post!.post.id);
       expect(found).toBeDefined();
       expect(found!.avgRating).toBeNull();
       expect(found!.authorName).toBe("Bob");
@@ -206,8 +206,8 @@ describe("outfits.feed", () => {
   dbIt("filters by category", async () => {
     const caller = appRouter.createCaller(ctxFor(null));
     const feed = await caller.outfits.feed({ category: "formal", limit: 30 });
-    expect(feed.length).toBeGreaterThan(0);
-    expect(feed.every(f => f.post.category === "formal")).toBe(true);
+    expect(feed.posts.length).toBeGreaterThan(0);
+    expect(feed.posts.every(f => f.post.category === "formal")).toBe(true);
   });
 
   dbIt("supports the top and trending sorts", async () => {
@@ -220,21 +220,60 @@ describe("outfits.feed", () => {
     ).resolves.toBeDefined();
   });
 
-  dbIt("respects limit and offset", async () => {
+  dbIt("walks through pages without repeating or skipping", async () => {
     const caller = appRouter.createCaller(ctxFor(null));
-    const page1 = await caller.outfits.feed({
-      sort: "new",
-      limit: 1,
-      offset: 0,
-    });
+    const page1 = await caller.outfits.feed({ sort: "new", limit: 1 });
+    expect(page1.posts).toHaveLength(1);
+    expect(page1.nextCursor).not.toBeNull();
+
     const page2 = await caller.outfits.feed({
       sort: "new",
       limit: 1,
-      offset: 1,
+      cursor: page1.nextCursor,
     });
-    expect(page1).toHaveLength(1);
-    expect(page2).toHaveLength(1);
-    expect(page1[0].post.id).not.toBe(page2[0].post.id);
+    expect(page2.posts).toHaveLength(1);
+    expect(page2.posts[0].post.id).not.toBe(page1.posts[0].post.id);
+  });
+
+  dbIt("stops offering a cursor once the last page is short", async () => {
+    const caller = appRouter.createCaller(ctxFor(null));
+    const everything = await caller.outfits.feed({ sort: "new", limit: 50 });
+    expect(everything.posts.length).toBeLessThan(50);
+    expect(everything.nextCursor).toBeNull();
+  });
+
+  dbIt("reaches every post exactly once, page by page", async () => {
+    const caller = appRouter.createCaller(ctxFor(null));
+    const seen: number[] = [];
+    let cursor = null as Awaited<
+      ReturnType<typeof caller.outfits.feed>
+    >["nextCursor"];
+
+    for (let page = 0; page < 20; page++) {
+      const result = await caller.outfits.feed({
+        sort: "new",
+        limit: 2,
+        cursor,
+      });
+      seen.push(...result.posts.map(row => row.post.id));
+      cursor = result.nextCursor;
+      if (!cursor) break;
+    }
+
+    expect(new Set(seen).size).toBe(seen.length);
+    const all = await caller.outfits.feed({ sort: "new", limit: 50 });
+    expect(new Set(seen)).toEqual(new Set(all.posts.map(r => r.post.id)));
+  });
+
+  dbIt("pages the top sort too, where the value repeats", async () => {
+    const caller = appRouter.createCaller(ctxFor(null));
+    const page1 = await caller.outfits.feed({ sort: "top", limit: 1 });
+    const page2 = await caller.outfits.feed({
+      sort: "top",
+      limit: 1,
+      cursor: page1.nextCursor,
+    });
+    expect(page2.posts[0]?.post.id).not.toBe(page1.posts[0].post.id);
   });
 });
 

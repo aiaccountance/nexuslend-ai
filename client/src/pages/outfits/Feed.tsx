@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -47,11 +47,21 @@ export default function Feed() {
   const { isAuthenticated, user } = useAuth();
   const utils = trpc.useUtils();
 
-  const feedQuery = trpc.outfits.feed.useQuery({
-    sort,
-    category: category as (typeof CATEGORIES)[number] | undefined,
-    limit: 30,
-  });
+  // Paged rather than a single fixed batch: the feed used to stop dead at
+  // thirty outfits with no way to see the thirty-first.
+  const feedQuery = trpc.outfits.feed.useInfiniteQuery(
+    {
+      sort,
+      category: category as (typeof CATEGORIES)[number] | undefined,
+      limit: 30,
+    },
+    { getNextPageParam: page => page.nextCursor }
+  );
+
+  const posts = useMemo(
+    () => feedQuery.data?.pages.flatMap(page => page.posts) ?? [],
+    [feedQuery.data]
+  );
 
   const rateMutation = trpc.outfits.rate.useMutation({
     onSuccess: () => utils.outfits.feed.invalidate(),
@@ -136,7 +146,7 @@ export default function Feed() {
         </div>
       )}
 
-      {feedQuery.data && feedQuery.data.length === 0 && (
+      {feedQuery.data && posts.length === 0 && (
         <div className="flex flex-col items-center justify-center py-24 text-center text-white/40 gap-3">
           <ImageOff className="w-10 h-10" />
           <p>No outfits posted yet — be the first.</p>
@@ -149,9 +159,9 @@ export default function Feed() {
         </div>
       )}
 
-      {view === "swipe" && feedQuery.data && feedQuery.data.length > 0 && (
+      {view === "swipe" && posts.length > 0 && (
         <SwipeFeed
-          items={feedQuery.data}
+          items={posts}
           canRate={isAuthenticated}
           onRate={handleRate}
         />
@@ -164,7 +174,7 @@ export default function Feed() {
             : "hidden"
         }
       >
-        {feedQuery.data?.map(({ post, avgRating, ...author }) => (
+        {posts.map(({ post, avgRating, ...author }) => (
           <div
             key={post.id}
             className="break-inside-avoid bg-white/5 border border-white/10 rounded-2xl overflow-hidden group"
@@ -241,6 +251,18 @@ export default function Feed() {
           </div>
         ))}
       </div>
+
+      {view === "grid" && feedQuery.hasNextPage && (
+        <div className="flex justify-center pt-6">
+          <button
+            onClick={() => feedQuery.fetchNextPage()}
+            disabled={feedQuery.isFetchingNextPage}
+            className="px-5 py-2.5 text-sm rounded-xl bg-white/5 border border-white/10 text-white/70 hover:text-white hover:border-white/25 transition-colors disabled:opacity-50"
+          >
+            {feedQuery.isFetchingNextPage ? "Loading…" : "Show more outfits"}
+          </button>
+        </div>
+      )}
 
       {!isAuthenticated && (
         <p className="text-center text-white/40 text-sm mt-10">
