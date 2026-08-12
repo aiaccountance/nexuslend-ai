@@ -5,6 +5,7 @@ import { claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as outfitsDb from "./outfitsDb";
 import * as accountsDb from "./accountsDb";
+import * as notifications from "./notificationsDb";
 
 const CATEGORY_ENUM = z.enum([
   "casual",
@@ -237,6 +238,18 @@ export const outfitsRouter = router({
       await enforcingRules(() =>
         outfitsDb.rateOutfitPost(input.postId, ctx.user.id, input.rating)
       );
+
+      const post = await outfitsDb.getOutfitPostById(input.postId);
+      if (post) {
+        const who = await notifications.handleFor(ctx.user.id);
+        await notifications.notify({
+          userId: post.post.userId,
+          actorId: ctx.user.id,
+          kind: "rating",
+          postId: input.postId,
+          body: `${who} gave your outfit ${input.rating} star${input.rating === 1 ? "" : "s"}`,
+        });
+      }
       return { success: true };
     }),
 
@@ -271,6 +284,33 @@ export const outfitsRouter = router({
             ctx.user.id
           )
         );
+
+        // Both sides hear about it. Losing quietly is how people stop coming
+        // back; losing to a named outfit is a reason to post another one.
+        const loserId =
+          input.winnerId === input.postAId ? input.postBId : input.postAId;
+        const [winner, loser] = await Promise.all([
+          outfitsDb.getOutfitPostById(input.winnerId),
+          outfitsDb.getOutfitPostById(loserId),
+        ]);
+        if (winner) {
+          await notifications.notify({
+            userId: winner.post.userId,
+            actorId: ctx.user.id,
+            kind: "battle_won",
+            postId: input.winnerId,
+            body: "Your outfit won a head-to-head",
+          });
+        }
+        if (loser) {
+          await notifications.notify({
+            userId: loser.post.userId,
+            actorId: ctx.user.id,
+            kind: "battle_lost",
+            postId: loserId,
+            body: "Your outfit lost a head-to-head — it still counts towards your rating",
+          });
+        }
         return { success: true, newEloA, newEloB };
       }),
   }),
@@ -353,9 +393,19 @@ export const outfitsRouter = router({
     toggle: protectedProcedure
       .input(z.object({ userId: z.number() }))
       .mutation(async ({ ctx, input }) => {
-        return enforcingRules(() =>
+        const result = await enforcingRules(() =>
           outfitsDb.toggleFollow(ctx.user.id, input.userId)
         );
+        if (result.following) {
+          const who = await notifications.handleFor(ctx.user.id);
+          await notifications.notify({
+            userId: input.userId,
+            actorId: ctx.user.id,
+            kind: "follow",
+            body: `${who} started following you`,
+          });
+        }
+        return result;
       }),
   }),
 });

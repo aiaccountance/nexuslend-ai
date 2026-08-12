@@ -5,6 +5,7 @@ import { claudeJson } from "./_core/claude";
 import { storagePut } from "./storage";
 import * as wardrobeDb from "./wardrobeDb";
 import * as outfitsDb from "./outfitsDb";
+import * as notifications from "./notificationsDb";
 import {
   generateCleanGarmentShot,
   generateOutfitRender,
@@ -830,6 +831,16 @@ export const wardrobeRouter = router({
           postId: input.postId,
           userId: ctx.user.id,
           body: input.body,
+        });
+
+        const who = await notifications.handleFor(ctx.user.id);
+        await notifications.notify({
+          userId: post.post.userId,
+          actorId: ctx.user.id,
+          kind: "comment",
+          postId: input.postId,
+          // Enough of the comment to know whether it's worth opening.
+          body: `${who} commented: "${input.body.slice(0, 120)}${input.body.length > 120 ? "…" : ""}"`,
         });
         return { success: true };
       }),

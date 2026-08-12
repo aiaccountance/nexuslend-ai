@@ -36,6 +36,10 @@ import OutfitProfile from "@/pages/outfits/Profile";
 import OutfitSignIn from "@/pages/outfits/SignIn";
 import OutfitPickUsername from "@/pages/outfits/PickUsername";
 import OutfitWardrobe from "@/pages/outfits/Wardrobe";
+import OutfitNotifications from "@/pages/outfits/Notifications";
+import OutfitChallenge from "@/pages/outfits/Challenge";
+import OutfitSearch from "@/pages/outfits/SearchPage";
+import OutfitPost from "@/pages/outfits/Post";
 
 function DashboardRouter() {
   return (
@@ -87,6 +91,12 @@ function OutfitArenaRouter() {
             <Route path="/outfits/wardrobe" component={OutfitWardrobe} />
             <Route path="/outfits/battle" component={OutfitBattle} />
             <Route path="/outfits/leaderboard" component={OutfitLeaderboard} />
+            <Route path="/outfits/search" component={OutfitSearch} />
+            <Route path="/outfits/challenge" component={OutfitChallenge} />
+            <Route path="/outfits/alerts" component={OutfitNotifications} />
+            <Route path="/outfits/post/:postId">
+              {params => <OutfitPost postId={Number(params.postId)} />}
+            </Route>
             {/* Numeric profile links from before handles existed. */}
             <Route path="/outfits/u/:userId">
               {params => <OutfitProfile userId={params.userId} />}

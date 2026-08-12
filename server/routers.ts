@@ -10,6 +10,7 @@ import * as db from "./db";
 import { outfitsRouter } from "./outfitsRouter";
 import { wardrobeRouter } from "./wardrobeRouter";
 import { accountsRouter } from "./accountsRouter";
+import { arenaRouter } from "./arenaRouter";
 import https from "https";
 import { PDFParse } from "pdf-parse";
 
@@ -780,6 +781,7 @@ export const appRouter = router({
   outfits: outfitsRouter,
   wardrobe: wardrobeRouter,
   accounts: accountsRouter,
+  arena: arenaRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

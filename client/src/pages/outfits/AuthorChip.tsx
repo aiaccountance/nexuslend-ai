@@ -24,10 +24,17 @@ export function AuthorChip({
   author,
   size = "md",
   className = "",
+  linked = true,
 }: {
   author: Author;
   size?: keyof typeof SIZES;
   className?: string;
+  /**
+   * Set false when this sits inside something that is already a link — a feed
+   * card, a search result. A link inside a link is invalid HTML and browsers
+   * are free to do whatever they like with the click.
+   */
+  linked?: boolean;
 }) {
   const handle = author.authorDisplayUsername ?? author.authorUsername;
   const label = handle ? `@${handle}` : (author.authorName ?? "Someone");
@@ -56,7 +63,7 @@ export function AuthorChip({
     </>
   );
 
-  if (!author.authorUsername) {
+  if (!author.authorUsername || !linked) {
     return (
       <span className={`flex items-center gap-2 text-white/50 ${className}`}>
         {inner}

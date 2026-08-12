@@ -5,6 +5,7 @@ import {
   mysqlTable,
   text,
   timestamp,
+  uniqueIndex,
   varchar,
   decimal,
   boolean,
@@ -510,3 +511,96 @@ export const outfitAvatars = mysqlTable("outfit_avatars", {
 
 export type OutfitAvatar = typeof outfitAvatars.$inferSelect;
 export type InsertOutfitAvatar = typeof outfitAvatars.$inferInsert;
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+// One row per thing that happened to someone: their outfit was rated, someone
+// followed them, a battle went their way. `actorId` is who did it, and is null
+// for things the app itself decides, like winning the week.
+//
+// The text is written when the row is created rather than rendered later, so a
+// notification still reads correctly after the post it refers to is deleted.
+export const outfitNotifications = mysqlTable(
+  "outfit_notifications",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    actorId: int("actorId"),
+    kind: mysqlEnum("kind", [
+      "rating",
+      "comment",
+      "follow",
+      "battle_won",
+      "battle_lost",
+      "challenge_won",
+      "weekly_winner",
+    ]).notNull(),
+    postId: int("postId"),
+    challengeId: int("challengeId"),
+    body: varchar("body", { length: 300 }).notNull(),
+    readAt: timestamp("readAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // "my notifications, newest first" and "how many are unread" are the only
+    // two questions ever asked of this table.
+    inbox: index("outfit_notifications_userId_createdAt_idx").on(
+      table.userId,
+      table.createdAt
+    ),
+    unread: index("outfit_notifications_userId_readAt_idx").on(
+      table.userId,
+      table.readAt
+    ),
+  })
+);
+
+export type OutfitNotification = typeof outfitNotifications.$inferSelect;
+export type InsertOutfitNotification = typeof outfitNotifications.$inferInsert;
+
+// ─── Weekly challenges ────────────────────────────────────────────────────────
+// A themed competition with a deadline. Entries point at posts that already
+// exist, so entering a challenge never means uploading the same outfit twice.
+export const outfitChallenges = mysqlTable(
+  "outfit_challenges",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    slug: varchar("slug", { length: 80 }).notNull().unique(),
+    title: varchar("title", { length: 120 }).notNull(),
+    prompt: varchar("prompt", { length: 400 }).notNull(),
+    startsAt: timestamp("startsAt").notNull(),
+    endsAt: timestamp("endsAt").notNull(),
+    // Set when the challenge closes and the winner is worked out.
+    winnerPostId: int("winnerPostId"),
+    settledAt: timestamp("settledAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    running: index("outfit_challenges_endsAt_idx").on(table.endsAt),
+  })
+);
+
+export type OutfitChallenge = typeof outfitChallenges.$inferSelect;
+export type InsertOutfitChallenge = typeof outfitChallenges.$inferInsert;
+
+export const outfitChallengeEntries = mysqlTable(
+  "outfit_challenge_entries",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    challengeId: int("challengeId").notNull(),
+    postId: int("postId").notNull(),
+    userId: int("userId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // A post can only be entered into a challenge once.
+    once: uniqueIndex("outfit_challenge_entries_challengeId_postId_idx").on(
+      table.challengeId,
+      table.postId
+    ),
+    byEntrant: index("outfit_challenge_entries_userId_idx").on(table.userId),
+  })
+);
+
+export type OutfitChallengeEntry = typeof outfitChallengeEntries.$inferSelect;
+export type InsertOutfitChallengeEntry =
+  typeof outfitChallengeEntries.$inferInsert;

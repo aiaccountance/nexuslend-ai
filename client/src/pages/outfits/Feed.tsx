@@ -4,6 +4,7 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { StarRating } from "./StarRating";
+import { OutfitImage } from "./OutfitImage";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
@@ -12,6 +13,7 @@ import {
   Crown,
   LayoutGrid,
   Rows3,
+  Flame,
 } from "lucide-react";
 import { Comments } from "./Comments";
 import { AuthorChip } from "./AuthorChip";
@@ -124,6 +126,8 @@ export default function Feed() {
         </div>
       </div>
 
+      <ChallengeBanner />
+
       {view === "grid" && <OutfitOfTheWeek />}
 
       {feedQuery.isLoading && (
@@ -166,11 +170,10 @@ export default function Feed() {
             className="break-inside-avoid bg-white/5 border border-white/10 rounded-2xl overflow-hidden group"
           >
             <div className="relative">
-              <img
+              <OutfitImage
                 src={post.imageUrl}
                 alt={post.caption || "Outfit"}
-                className="w-full h-auto object-cover"
-                loading="lazy"
+                className="w-full h-auto min-h-[220px] object-cover"
               />
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 flex items-center justify-between">
                 <Badge className="bg-white/15 border-0 text-white backdrop-blur-sm capitalize">
@@ -251,6 +254,41 @@ export default function Feed() {
   );
 }
 
+/**
+ * The week's challenge, at the top of the feed.
+ *
+ * Sits above everything because it's the one thing on this page with a
+ * deadline — everything else will still be here tomorrow.
+ */
+function ChallengeBanner() {
+  const challengeQuery = trpc.arena.challenges.current.useQuery();
+  const current = challengeQuery.data;
+  if (!current) return null;
+
+  return (
+    <Link
+      href="/outfits/challenge"
+      className="flex items-center gap-3 mb-5 p-3.5 rounded-2xl border border-fuchsia-400/25 bg-gradient-to-r from-fuchsia-500/12 to-violet-600/5 hover:border-fuchsia-400/50 transition-colors"
+    >
+      <span className="w-9 h-9 rounded-xl bg-fuchsia-500/20 flex items-center justify-center shrink-0">
+        <Flame className="w-4.5 h-4.5 text-fuchsia-300" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold truncate">
+          {current.challenge.title}
+        </p>
+        <p className="text-xs text-white/50 truncate">
+          {current.entryCount}{" "}
+          {current.entryCount === 1 ? "entry" : "entries"} so far
+        </p>
+      </div>
+      <span className="text-xs text-fuchsia-200 font-medium shrink-0">
+        Enter
+      </span>
+    </Link>
+  );
+}
+
 function OutfitOfTheWeek() {
   const query = trpc.outfits.outfitOfTheWeek.useQuery();
   const winner = query.data;
@@ -261,7 +299,7 @@ function OutfitOfTheWeek() {
       href={`/outfits/u/${winner.post.userId}`}
       className="flex items-center gap-4 mb-6 p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-fuchsia-500/10 to-transparent border border-amber-400/25 hover:border-amber-400/50 transition-colors"
     >
-      <img
+      <OutfitImage
         src={winner.post.imageUrl}
         alt={winner.post.caption || "Outfit of the week"}
         className="w-16 h-16 rounded-xl object-cover shrink-0"
@@ -274,7 +312,8 @@ function OutfitOfTheWeek() {
           {winner.post.caption || "Untitled look"}
         </p>
         <p className="text-xs text-white/50">
-          <AuthorChip author={winner} size="sm" /> · {winner.post.battleWins}{" "}
+          <AuthorChip author={winner} size="sm" linked={false} /> ·{" "}
+          {winner.post.battleWins}{" "}
           battle
           {winner.post.battleWins === 1 ? " win" : " wins"}
         </p>

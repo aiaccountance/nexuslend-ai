@@ -7,7 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
-import { UploadCloud, Sparkles, Loader2, Wand2 } from "lucide-react";
+import {
+  UploadCloud,
+  Sparkles,
+  Loader2,
+  Wand2,
+  Camera,
+  ImagePlus,
+} from "lucide-react";
 
 const CATEGORIES = [
   "casual",
@@ -27,6 +34,10 @@ export default function OutfitUpload() {
   const { isAuthenticated, loading } = useAuth();
   const [, navigate] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
+  // A second input with `capture` opens the camera straight away on a phone.
+  // It has to be separate: an input that captures can no longer offer the
+  // photo library, and people want both.
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [fileBase64, setFileBase64] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>("image/jpeg");
@@ -197,9 +208,10 @@ export default function OutfitUpload() {
             ) : (
               <div className="text-center text-white/40">
                 <UploadCloud className="w-8 h-8 mx-auto mb-2" />
-                <p className="text-sm">
+                <p className="text-sm hidden sm:block">
                   Drag & drop or click to upload a photo
                 </p>
+                <p className="text-sm sm:hidden">Choose a photo</p>
               </div>
             )}
             <input
@@ -209,6 +221,36 @@ export default function OutfitUpload() {
               className="hidden"
               onChange={e => handleFile(e.target.files?.[0])}
             />
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={e => handleFile(e.target.files?.[0])}
+            />
+          </div>
+
+          {/* On a phone the camera is the point — most outfits are photographed
+              on the spot, not found in a library. */}
+          <div className="sm:hidden grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              className="bg-gradient-to-r from-fuchsia-500 to-violet-600 border-0"
+            >
+              <Camera className="w-4 h-4 mr-2" />
+              Take a photo
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => fileRef.current?.click()}
+              className="border-white/15 bg-white/5 text-white hover:bg-white/10"
+            >
+              <ImagePlus className="w-4 h-4 mr-2" />
+              Library
+            </Button>
           </div>
 
           <div>
