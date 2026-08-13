@@ -1,4 +1,13 @@
-import { eq, ne, and, desc, sql, inArray } from "drizzle-orm";
+import {
+  eq,
+  ne,
+  and,
+  desc,
+  sql,
+  inArray,
+  isNull,
+  notInArray,
+} from "drizzle-orm";
 import {
   outfitAccounts,
   outfitPosts,
@@ -91,10 +100,24 @@ export async function listOutfitFeed(opts: {
   cursor?: FeedCursor;
   category?: OutfitCategory;
   userId?: number;
+  /** Anyone the viewer has blocked, or who has blocked them. */
+  hideAuthors?: number[];
+  /** Set when someone is looking at their own profile: they still see their
+   *  own hidden posts, with the reason, rather than wondering where they went. */
+  includeHidden?: boolean;
 }) {
   const db = await getDb();
   if (!db) return [];
-  const { sort, limit, offset = 0, cursor, category, userId } = opts;
+  const {
+    sort,
+    limit,
+    offset = 0,
+    cursor,
+    category,
+    userId,
+    hideAuthors,
+    includeHidden = false,
+  } = opts;
 
   const sortColumn =
     sort === "top"
@@ -106,6 +129,10 @@ export async function listOutfitFeed(opts: {
   const conditions = [];
   if (category) conditions.push(eq(outfitPosts.category, category));
   if (userId) conditions.push(eq(outfitPosts.userId, userId));
+  if (!includeHidden) conditions.push(isNull(outfitPosts.hiddenAt));
+  if (hideAuthors && hideAuthors.length > 0) {
+    conditions.push(notInArray(outfitPosts.userId, hideAuthors));
+  }
   if (cursor) {
     // Everything strictly after the last post seen, in this order.
     conditions.push(
@@ -262,10 +289,11 @@ export async function getRandomMatchupPair(excludeUserId?: number) {
       ? undefined
       : ne(outfitPosts.userId, excludeUserId);
 
+  const visible = isNull(outfitPosts.hiddenAt);
   const pickFrom = async (fromId: number) => {
     const where = notMine
-      ? and(sql`${outfitPosts.id} >= ${fromId}`, notMine)
-      : sql`${outfitPosts.id} >= ${fromId}`;
+      ? and(sql`${outfitPosts.id} >= ${fromId}`, notMine, visible)
+      : and(sql`${outfitPosts.id} >= ${fromId}`, visible);
     const rows = await db
       .select()
       .from(outfitPosts)
@@ -277,7 +305,7 @@ export async function getRandomMatchupPair(excludeUserId?: number) {
     const wrapped = await db
       .select()
       .from(outfitPosts)
-      .where(notMine ?? sql`1 = 1`)
+      .where(notMine ? and(notMine, visible) : visible)
       .orderBy(outfitPosts.id)
       .limit(1);
     return wrapped[0];
@@ -458,7 +486,8 @@ export async function outfitOfTheWeek() {
     .where(
       and(
         sql`${outfitPosts.createdAt} >= ${cutoff}`,
-        sql`${outfitPosts.battleWins} > 0`
+        sql`${outfitPosts.battleWins} > 0`,
+        isNull(outfitPosts.hiddenAt)
       )
     )
     .orderBy(desc(outfitPosts.eloRating))
@@ -484,7 +513,12 @@ export async function leaderboardPosts(
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
-    .where(sql`${outfitPosts.createdAt} >= ${cutoff}`)
+    .where(
+      and(
+        sql`${outfitPosts.createdAt} >= ${cutoff}`,
+        isNull(outfitPosts.hiddenAt)
+      )
+    )
     .orderBy(desc(outfitPosts.eloRating))
     .limit(limit);
 }
@@ -510,7 +544,12 @@ export async function leaderboardUsers(
       avgElo: sql<number>`AVG(${outfitPosts.eloRating})`,
     })
     .from(outfitPosts)
-    .where(sql`${outfitPosts.createdAt} >= ${cutoff}`)
+    .where(
+      and(
+        sql`${outfitPosts.createdAt} >= ${cutoff}`,
+        isNull(outfitPosts.hiddenAt)
+      )
+    )
     .groupBy(outfitPosts.userId)
     .having(sql`COUNT(${outfitPosts.id}) >= ${MIN_POSTS_FOR_STYLIST_BOARD}`)
     .orderBy(desc(sql`AVG(${outfitPosts.eloRating})`))

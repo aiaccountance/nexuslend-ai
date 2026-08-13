@@ -6,6 +6,7 @@ import { storagePut } from "./storage";
 import * as outfitsDb from "./outfitsDb";
 import * as accountsDb from "./accountsDb";
 import * as notifications from "./notificationsDb";
+import * as moderationDb from "./moderationDb";
 import { enforce } from "./rateLimit";
 
 const CATEGORY_ENUM = z.enum([
@@ -222,12 +223,19 @@ export const outfitsRouter = router({
         category: CATEGORY_ENUM.optional(),
       })
     )
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      // Whoever this person has blocked, or who has blocked them, is simply
+      // not in the feed. Done here rather than filtered afterwards, so a
+      // blocked person can never eat into someone's page of results.
+      const hideAuthors = ctx.user
+        ? await moderationDb.hiddenFrom(ctx.user.id)
+        : [];
       const rows = await outfitsDb.listOutfitFeed({
         sort: input.sort,
         limit: input.limit,
         cursor: input.cursor ?? undefined,
         category: input.category,
+        hideAuthors,
       });
       const last = rows[rows.length - 1];
       return {
@@ -246,6 +254,9 @@ export const outfitsRouter = router({
     .query(async ({ ctx, input }) => {
       const row = await outfitsDb.getOutfitPostById(input.id);
       if (!row) return null;
+      // A post that has been taken down is still visible to whoever posted it,
+      // with the reason, rather than silently vanishing on them.
+      if (row.post.hiddenAt && row.post.userId !== ctx.user?.id) return null;
       const userRating = ctx.user
         ? await outfitsDb.getUserRatingForPost(input.id, ctx.user.id)
         : undefined;
@@ -385,6 +396,7 @@ export const outfitsRouter = router({
               limit: 50,
               offset: 0,
               userId: input.userId,
+              includeHidden: ctx.user?.id === input.userId,
             }),
             outfitsDb.getFollowerCount(input.userId),
             outfitsDb.getFollowingCount(input.userId),

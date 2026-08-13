@@ -29,6 +29,8 @@ export const LIMITS = {
   comment: { max: 60, windowMs: 60 * 60 * 1000 },
   signUp: { max: 10, windowMs: 60 * 60 * 1000 },
   signIn: { max: 20, windowMs: 15 * 60 * 1000 },
+  // Reporting is free to do and costs a person's attention to read.
+  report: { max: 30, windowMs: 60 * 60 * 1000 },
 } as const;
 
 export type LimitedAction = keyof typeof LIMITS;

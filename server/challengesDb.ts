@@ -176,7 +176,12 @@ export async function listEntries(challengeId: number) {
     .innerJoin(outfitPosts, eq(outfitPosts.id, outfitChallengeEntries.postId))
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
-    .where(eq(outfitChallengeEntries.challengeId, challengeId))
+    .where(
+      and(
+        eq(outfitChallengeEntries.challengeId, challengeId),
+        isNull(outfitPosts.hiddenAt)
+      )
+    )
     .orderBy(desc(outfitPosts.eloRating));
 }
 
@@ -300,6 +305,7 @@ export async function settleFinishedChallenges() {
       .where(
         and(
           eq(outfitChallengeEntries.challengeId, challenge.id),
+          isNull(outfitPosts.hiddenAt),
           sql`${outfitPosts.ratingCount} >= ${MIN_RATINGS_TO_WIN}`
         )
       )

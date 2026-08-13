@@ -5,6 +5,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { StarRating } from "./StarRating";
 import { OutfitImage } from "./OutfitImage";
+import { ReportButton } from "./ReportButton";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
@@ -202,7 +203,10 @@ export default function Feed() {
                   {post.caption}
                 </p>
               )}
-              <AuthorChip author={author} size="sm" />
+              <div className="flex items-center justify-between gap-2">
+                <AuthorChip author={author} size="sm" />
+                <ReportButton postId={post.id} authorUserId={post.userId} compact />
+              </div>
               {post.aiTags.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {post.aiTags.slice(0, 3).map(tag => (

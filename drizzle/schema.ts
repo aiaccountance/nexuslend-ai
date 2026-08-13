@@ -10,6 +10,7 @@ import {
   varchar,
   decimal,
   boolean,
+  date,
   json,
 } from "drizzle-orm/mysql-core";
 
@@ -272,6 +273,10 @@ export const outfitPosts = mysqlTable("outfit_posts", {
   battleLosses: int("battleLosses").default(0).notNull(),
   ratingSum: int("ratingSum").default(0).notNull(),
   ratingCount: int("ratingCount").default(0).notNull(),
+  // Set when a post is taken down. Hidden rather than deleted, so a wrong call
+  // can be undone and the author still has their photograph.
+  hiddenAt: timestamp("hiddenAt"),
+  hiddenReason: varchar("hiddenReason", { length: 200 }),
   // The star average, kept by the database rather than worked out on every
   // read. "Best first" is one of three ways the feed is sorted, and a sort on
   // a sum divided by a count cannot use an index — so at twenty thousand
@@ -628,3 +633,107 @@ export const outfitChallengeEntries = mysqlTable(
 export type OutfitChallengeEntry = typeof outfitChallengeEntries.$inferSelect;
 export type InsertOutfitChallengeEntry =
   typeof outfitChallengeEntries.$inferInsert;
+
+// ─── Moderation ───────────────────────────────────────────────────────────────
+// Somewhere for people to say "this shouldn't be here", and somewhere for that
+// to be dealt with. A public feed of photographs without this is not something
+// strangers can be let near.
+export const outfitReports = mysqlTable(
+  "outfit_reports",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    reporterId: int("reporterId").notNull(),
+    // Exactly one of these is set, depending on what was reported.
+    postId: int("postId"),
+    commentId: int("commentId"),
+    reportedUserId: int("reportedUserId"),
+    reason: mysqlEnum("reason", [
+      "nudity",
+      "harassment",
+      "hate",
+      "violence",
+      "spam",
+      "not_their_photo",
+      "under_age",
+      "other",
+    ]).notNull(),
+    note: varchar("note", { length: 500 }),
+    status: mysqlEnum("status", ["open", "actioned", "dismissed"])
+      .default("open")
+      .notNull(),
+    resolvedBy: int("resolvedBy"),
+    resolvedAt: timestamp("resolvedAt"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // The queue is read as "what's still open, oldest first".
+    queue: index("outfit_reports_status_createdAt_idx").on(
+      table.status,
+      table.createdAt
+    ),
+    // And "has this person already reported this?" on every report.
+    byReporter: index("outfit_reports_reporterId_idx").on(table.reporterId),
+  })
+);
+
+export type OutfitReport = typeof outfitReports.$inferSelect;
+export type InsertOutfitReport = typeof outfitReports.$inferInsert;
+
+// Blocking is the part that works without anyone having to review anything:
+// whoever you block disappears from your feed and you from theirs, instantly.
+export const outfitBlocks = mysqlTable(
+  "outfit_blocks",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    blockerId: int("blockerId").notNull(),
+    blockedId: int("blockedId").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    once: uniqueIndex("outfit_blocks_pair_idx").on(
+      table.blockerId,
+      table.blockedId
+    ),
+    // Read from both ends: who I've blocked, and who has blocked me.
+    mine: index("outfit_blocks_blockerId_idx").on(table.blockerId),
+    theirs: index("outfit_blocks_blockedId_idx").on(table.blockedId),
+  })
+);
+
+export type OutfitBlock = typeof outfitBlocks.$inferSelect;
+export type InsertOutfitBlock = typeof outfitBlocks.$inferInsert;
+
+// ─── What people actually wear ────────────────────────────────────────────────
+// The wardrobe knows what someone owns. This is what turns that list into a
+// record: one row each time a garment is worn. It is the only thing here that
+// gets more useful the longer someone stays.
+export const wardrobeWears = mysqlTable(
+  "wardrobe_wears",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    userId: int("userId").notNull(),
+    itemId: int("itemId").notNull(),
+    // Set when a whole saved outfit was worn, so "what did I wear on the 4th"
+    // can answer with the outfit rather than a list of separate garments.
+    outfitId: int("outfitId"),
+    // A date, not a timestamp: people remember days, not minutes, and it makes
+    // "already logged today" a simple comparison. Kept as a string so a
+    // calendar day never drifts a day either way through a timezone.
+    wornOn: date("wornOn", { mode: "string" }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => ({
+    // One row per garment per day — tapping twice doesn't count twice.
+    once: uniqueIndex("wardrobe_wears_item_day_idx").on(
+      table.itemId,
+      table.wornOn
+    ),
+    byOwner: index("wardrobe_wears_userId_wornOn_idx").on(
+      table.userId,
+      table.wornOn
+    ),
+  })
+);
+
+export type WardrobeWear = typeof wardrobeWears.$inferSelect;
+export type InsertWardrobeWear = typeof wardrobeWears.$inferInsert;

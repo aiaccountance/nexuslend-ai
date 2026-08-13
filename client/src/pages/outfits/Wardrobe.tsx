@@ -17,6 +17,7 @@ import {
   Check,
   UserRound,
   Shapes,
+  CalendarCheck,
 } from "lucide-react";
 
 // `label` names the drawer when filtering the closet; `one` names a single
@@ -502,6 +503,68 @@ function Builder() {
 }
 
 // ─── Saved outfits ────────────────────────────────────────────────────────────
+/**
+ * "Wore this today".
+ *
+ * One tap, one row per garment per day. It is the smallest thing in the app
+ * and the only data in it that compounds — a wardrobe without it is a list,
+ * and with it is a record of what someone actually reaches for.
+ */
+function WoreThisButton({
+  outfitId,
+  itemIds,
+}: {
+  outfitId: number;
+  itemIds: number[];
+}) {
+  const utils = trpc.useUtils();
+  const [logged, setLogged] = useState(false);
+
+  const record = trpc.arena.wears.record.useMutation({
+    onSuccess: () => {
+      setLogged(true);
+      toast.success("Logged for today");
+      utils.arena.wears.invalidate();
+    },
+    onError: error => toast.error(error.message.slice(0, 140)),
+  });
+
+  const forget = trpc.arena.wears.forget.useMutation({
+    onSuccess: () => {
+      setLogged(false);
+      utils.arena.wears.invalidate();
+    },
+  });
+
+  if (itemIds.length === 0) return null;
+
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={() =>
+        logged
+          ? forget.mutate({ itemIds })
+          : record.mutate({ itemIds, outfitId })
+      }
+      disabled={record.isPending || forget.isPending}
+      className={`border-white/15 bg-transparent ${
+        logged ? "text-emerald-300" : "text-white/70 hover:bg-white/10"
+      }`}
+    >
+      {logged ? (
+        <>
+          <Check className="w-3.5 h-3.5 mr-1.5" /> Worn today
+        </>
+      ) : (
+        <>
+          <CalendarCheck className="w-3.5 h-3.5 mr-1.5" /> Wore this today
+        </>
+      )}
+    </Button>
+  );
+}
+
 function SavedOutfits() {
   const utils = trpc.useUtils();
   const outfitsQuery = trpc.wardrobe.listOutfits.useQuery();
@@ -605,6 +668,10 @@ function SavedOutfits() {
                   <Send className="w-3.5 h-3.5 mr-1.5" /> Enter competition
                 </Button>
               )}
+              <WoreThisButton
+                outfitId={outfit.id}
+                itemIds={outfit.items.map(item => item.id)}
+              />
               <button
                 onClick={() => deleteMutation.mutate({ id: outfit.id })}
                 className="p-1.5 text-white/40 hover:text-red-400 transition-colors"

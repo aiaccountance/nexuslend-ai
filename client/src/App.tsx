@@ -40,6 +40,7 @@ import OutfitNotifications from "@/pages/outfits/Notifications";
 import OutfitChallenge from "@/pages/outfits/Challenge";
 import OutfitSearch from "@/pages/outfits/SearchPage";
 import OutfitPost from "@/pages/outfits/Post";
+import OutfitModeration from "@/pages/outfits/Moderation";
 
 function DashboardRouter() {
   return (
@@ -94,6 +95,7 @@ function OutfitArenaRouter() {
             <Route path="/outfits/search" component={OutfitSearch} />
             <Route path="/outfits/challenge" component={OutfitChallenge} />
             <Route path="/outfits/alerts" component={OutfitNotifications} />
+            <Route path="/outfits/reports" component={OutfitModeration} />
             <Route path="/outfits/post/:postId">
               {params => <OutfitPost postId={Number(params.postId)} />}
             </Route>

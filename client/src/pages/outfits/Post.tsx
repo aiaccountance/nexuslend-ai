@@ -3,6 +3,7 @@ import { trpc } from "@/lib/trpc";
 import { Loader2, Star, Swords, ArrowLeft, ImageOff } from "lucide-react";
 import { AuthorChip } from "./AuthorChip";
 import { OutfitImage } from "./OutfitImage";
+import { ReportButton } from "./ReportButton";
 import { Comments } from "./Comments";
 
 /**
@@ -98,6 +99,11 @@ export default function Post({ postId }: { postId: number }) {
           )}
 
           <Comments postId={post.id} />
+
+          <div className="pt-1 flex items-center gap-2 text-[11px] text-white/30">
+            <ReportButton postId={post.id} authorUserId={post.userId} />
+            <span>Report this outfit</span>
+          </div>
         </div>
       </div>
     </div>

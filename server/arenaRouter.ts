@@ -7,12 +7,20 @@
  */
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import {
+  adminProcedure,
+  protectedProcedure,
+  publicProcedure,
+  router,
+} from "./_core/trpc";
 import * as notificationsDb from "./notificationsDb";
 import * as challengesDb from "./challengesDb";
 import * as searchDb from "./searchDb";
 import * as accountsDb from "./accountsDb";
 import * as outfitsDb from "./outfitsDb";
+import * as moderationDb from "./moderationDb";
+import * as wearsDb from "./wearsDb";
+import { enforce } from "./rateLimit";
 
 const CATEGORY_ENUM = z.enum([
   "casual",
@@ -43,7 +51,12 @@ function withAvgRating<
   };
 }
 
+const REASON_ENUM = z.enum(moderationDb.REPORT_REASONS);
+
 function toTrpcError(error: unknown): never {
+  if (error instanceof moderationDb.ModerationError) {
+    throw new TRPCError({ code: error.code, message: error.message });
+  }
   if (error instanceof challengesDb.ChallengeError) {
     // A duplicate entry is the caller asking for something that already
     // happened, which is a bad request, not a server problem.
@@ -149,6 +162,146 @@ export const arenaRouter = router({
           ctx.user.id
         );
       }),
+  }),
+
+  // ── Reporting, blocking, taking down ───────────────────────────────────
+  safety: router({
+    report: protectedProcedure
+      .input(
+        z.object({
+          postId: z.number().optional(),
+          commentId: z.number().optional(),
+          reason: REASON_ENUM,
+          note: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        // Reporting is free to do and costs someone else's time to read, so
+        // it gets the same kind of ceiling as anything else worth abusing.
+        enforce("report", ctx.user.id);
+        try {
+          if (input.postId) {
+            return await moderationDb.reportPost(
+              input.postId,
+              ctx.user.id,
+              input.reason,
+              input.note
+            );
+          }
+          if (input.commentId) {
+            return await moderationDb.reportComment(
+              input.commentId,
+              ctx.user.id,
+              input.reason,
+              input.note
+            );
+          }
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Say what you are reporting",
+          });
+        } catch (error) {
+          toTrpcError(error);
+        }
+      }),
+
+    block: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await moderationDb.block(ctx.user.id, input.userId);
+        } catch (error) {
+          toTrpcError(error);
+        }
+      }),
+
+    unblock: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        return moderationDb.unblock(ctx.user.id, input.userId);
+      }),
+
+    blocked: protectedProcedure.query(async ({ ctx }) => {
+      return moderationDb.blockedList(ctx.user.id);
+    }),
+
+    // ── The queue, for whoever is reviewing ──────────────────────────────
+    queue: adminProcedure.query(async () => {
+      return moderationDb.openReports();
+    }),
+
+    queueSize: adminProcedure.query(async () => {
+      return moderationDb.countOpenReports();
+    }),
+
+    uphold: adminProcedure
+      .input(z.object({ reportId: z.number(), note: z.string().max(200).optional() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await moderationDb.upholdReport(
+            input.reportId,
+            ctx.user.id,
+            input.note
+          );
+        } catch (error) {
+          toTrpcError(error);
+        }
+      }),
+
+    dismiss: adminProcedure
+      .input(z.object({ reportId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        try {
+          return await moderationDb.dismissReport(input.reportId, ctx.user.id);
+        } catch (error) {
+          toTrpcError(error);
+        }
+      }),
+  }),
+
+  // ── What people actually wear ──────────────────────────────────────────
+  wears: router({
+    record: protectedProcedure
+      .input(
+        z.object({
+          itemIds: z.array(z.number()).min(1).max(20),
+          outfitId: z.number().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        return wearsDb.recordWear({
+          userId: ctx.user.id,
+          itemIds: input.itemIds,
+          outfitId: input.outfitId,
+        });
+      }),
+
+    forget: protectedProcedure
+      .input(z.object({ itemIds: z.array(z.number()).min(1).max(20) }))
+      .mutation(async ({ ctx, input }) => {
+        return wearsDb.forgetWear(ctx.user.id, input.itemIds);
+      }),
+
+    summary: protectedProcedure.query(async ({ ctx }) => {
+      const map = await wearsDb.wearSummary(ctx.user.id);
+      // A map does not survive the wire; an array of pairs does.
+      return Array.from(map.entries()).map(([itemId, stats]) => ({
+        itemId,
+        ...stats,
+      }));
+    }),
+
+    neglected: protectedProcedure.query(async ({ ctx }) => {
+      return wearsDb.neglected(ctx.user.id);
+    }),
+
+    favourites: protectedProcedure.query(async ({ ctx }) => {
+      return wearsDb.favourites(ctx.user.id);
+    }),
+
+    diary: protectedProcedure.query(async ({ ctx }) => {
+      return wearsDb.diary(ctx.user.id);
+    }),
   }),
 
   search: router({

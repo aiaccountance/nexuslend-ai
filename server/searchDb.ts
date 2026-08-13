@@ -11,7 +11,7 @@
  * and the place to change first if search ever feels slow. A real full-text
  * index is the fix, and the note in `searchPosts` says so.
  */
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "./db";
 import { outfitAccounts, outfitPosts, users } from "../drizzle/schema";
 
@@ -55,12 +55,15 @@ export async function searchPosts(query: string, limit = MAX_RESULTS) {
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
     .where(
-      sql`(
-        LOWER(CAST(${outfitPosts.aiTags} AS CHAR)) LIKE ${needle}
-        OR LOWER(${outfitPosts.caption}) LIKE ${needle}
-        OR LOWER(${outfitPosts.aiOccasion}) LIKE ${needle}
-        OR LOWER(${outfitPosts.category}) LIKE ${needle}
-      )`
+      and(
+        isNull(outfitPosts.hiddenAt),
+        sql`(
+          LOWER(CAST(${outfitPosts.aiTags} AS CHAR)) LIKE ${needle}
+          OR LOWER(${outfitPosts.caption}) LIKE ${needle}
+          OR LOWER(${outfitPosts.aiOccasion}) LIKE ${needle}
+          OR LOWER(${outfitPosts.category}) LIKE ${needle}
+        )`
+      )
     )
     .orderBy(desc(outfitPosts.eloRating))
     .limit(limit);
@@ -84,7 +87,7 @@ export async function postsByCategory(
     .from(outfitPosts)
     .leftJoin(users, eq(users.id, outfitPosts.userId))
     .leftJoin(outfitAccounts, eq(outfitAccounts.userId, outfitPosts.userId))
-    .where(eq(outfitPosts.category, category))
+    .where(and(eq(outfitPosts.category, category), isNull(outfitPosts.hiddenAt)))
     .orderBy(desc(outfitPosts.eloRating))
     .limit(limit);
 }
